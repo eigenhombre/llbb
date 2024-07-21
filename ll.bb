@@ -15,7 +15,9 @@
 
 (defn global-const-str [var-name s]
   (format "@%s = private unnamed_addr constant [%d x i8] c\"%s\""
-          var-name(count s) s))
+          var-name
+          (count s)
+          s))
 
 (defn extern-i8* [f-name]
   (format "declare i32 @%s(i8* nocapture) nounwind"
