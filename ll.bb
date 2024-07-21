@@ -28,10 +28,9 @@
 (defn main-calling-puts [body]
   (format
    "define i32 @main() {
-    ; Convert [n x i8]* to i8  *...
+    ; Convert [n x i8]* to i8*:
     %%as_ptr = %s
 
-    ; Call puts function to write out the string to stdout.
     call i32 @puts(i8* %%as_ptr)
     ret i32 0
 }
