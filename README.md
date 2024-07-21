@@ -13,7 +13,7 @@ can be translated to object code using the LLVM toolchain as follows:
 
     real	0m0.220s
     user	0m0.001s
-    sys	    0m0.003s
+    sys	0m0.003s
     $ ls -lh hello
     -rwxr-xr-x  1 jacobsen  staff    33K Jul 20 20:39 hello
     $ cat hello.ll
