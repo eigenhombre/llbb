@@ -30,20 +30,13 @@
        (sort-by str)
        (filter (comp (partial re-find #"ex\d\d") str))))
 
-(defn read-matching-file [dir pat]
+(defn find-matching-files [dir pat]
   (->> dir
        fs/list-dir
-       (filter (comp (partial re-find pat) str))
-       first
-       str
-       slurp))
+       (filter (comp (partial re-find pat) str))))
 
-(defn get-md [dir]
-  (read-matching-file dir #"\d\.md$"))
-
-(defn get-cmds [dir]
-  (str/split (read-matching-file dir #"\d\.cmd$")
-             #"\n"))
+(defn get-markdown-and-command-files [dir]
+  (find-matching-files dir #"\d\.(?:c?)md$"))
 
 (defn session-str [dir cmds]
   (str/join "\n"
@@ -59,14 +52,34 @@
                                    (str/split result #"\n"))))
                         "")))))
 
-(println
- (str/join
-  "\n\n"
-  (for [[n dir] (map-indexed vector (find-examples))]
-    (format "# Example %s
 
-%s
+(defn is-md? [f]
+  (= (fs/extension f) "md"))
+
+(defn is-cmd? [f]
+  (= (fs/extension f) "cmd"))
+
+(defn generate-example [dir ex-files]
+  (str/join "\n\n"
+            (for [f ex-files
+                  :let [contents (slurp (str f))]]
+              (cond
+                (is-md? f) contents
+                (is-cmd? f) (session-str dir (str/split
+                                              contents
+                                              #"\n"))
+                :t (str "UNKNOWN FILE TYPE " f)))))
+
+(defn generate-readme []
+  (println
+   (str/join
+    "\n\n"
+    (for [[n dir] (map-indexed vector (find-examples))]
+      (format "# Example %s
+
 %s"
-            (inc n)
-            (get-md dir)
-            (session-str dir (get-cmds dir))))))
+              (inc n)
+              (generate-example dir
+                                (get-markdown-and-command-files dir)))))))
+
+(generate-readme)

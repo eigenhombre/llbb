@@ -5,9 +5,11 @@ Is it even possible, or is it totally bonkers?
 # Example 1
 
 
-This Babashka script generates [LLVM](https://llvm.org/)
-[IR](https://en.wikipedia.org/wiki/Intermediate_representation) which
+The following Babashka "Hello, world" script generates
+[LLVM](https://llvm.org/)
+[IR](https://en.wikipedia.org/wiki/Intermediate_representation), which
 can be translated to object code using the LLVM toolchain as follows:
+
 
 
     $ cat ll1.bb
@@ -40,19 +42,34 @@ can be translated to object code using the LLVM toolchain as follows:
     $ time ./hello
     Hello, World
     
-    real	0m0.176s
-    user	0m0.001s
-    sys	0m0.002s
+    real	0m0.154s
+    user	0m0.000s
+    sys	0m0.001s
+
+Note the execution time is reasonably short.
+
 
 # Example 2
 
-While it may be "cheating" to use the LLVM toolchain, its IR is easily
-generated using pretty much any programming language, and Babashka
-provides the power of Clojure, fast start up speed, the REPL,
-etc. making it a fun way to experiment with LLVM and toy languages.
+LLVM IR is easily
+generated using pretty much any programming language. Babashka
+provides the power of Clojure, fast start up speed, the REPL, etc.
+making it a fun way to experiment with LLVM and toy languages.
 
-The next step for this repository is to flesh out the Hello, World
-example and move towards the direction of a simple toy language,
-perhaps a purely arithmetic Forth or similar.
+Let's make another simple program which accepts a variable number
+of arguments and returns, as its exit code, the number of arguments
+given (including the program name itself).
+
+The equivalent C program is:
 
 
+
+    $ cat argcount.c
+    int main(int argc, char** argv) {
+      return argc;
+    }
+    $ cc argcount.c -o argcount
+    $ ./argcount; echo $?
+    1
+    $ ./argcount a b c; echo $?
+    4
