@@ -1,6 +1,6 @@
-Can you write a compiler using Babashka?  I mean a "real" compiler that
-will ultimately yield compact object code?  Is it even possible, or is
-it totally bonkers?
+Can you write a compiler using [Babashka](https://babashka.org/)?  I
+mean a "real" compiler that will ultimately yield compact object code?
+Is it even possible, or is it totally bonkers?
 
 # Example 1
 
@@ -40,9 +40,9 @@ can be translated to object code using the LLVM toolchain as follows:
     $ time ./hello
     Hello, World
     
-    real	0m0.167s
-    user	0m0.000s
-    sys	0m0.001s
+    real	0m0.176s
+    user	0m0.001s
+    sys	0m0.002s
 
 # Example 2
 
