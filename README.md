@@ -16,7 +16,6 @@ can be translated to object code using the LLVM toolchain as follows:
     #!/usr/bin/env bb
     
     (load-file "../llir.bb")
-    (load-file "../cmd.bb")
     
     (defn hello-main [body]
       (str/join "\n"
@@ -42,11 +41,13 @@ can be translated to object code using the LLVM toolchain as follows:
     $ time ./hello
     Hello, World
     
-    real	0m0.175s
+    real	0m0.180s
     user	0m0.001s
     sys	0m0.002s
 
-Note the execution time is reasonably short.
+Note the execution time is reasonably short.  Here `llir.bb` is a small
+utility module in this repository used to generate LLVM IR commands.
+
 
 
 # Example 2

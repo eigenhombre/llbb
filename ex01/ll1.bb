@@ -1,7 +1,6 @@
 #!/usr/bin/env bb
 
 (load-file "../llir.bb")
-(load-file "../cmd.bb")
 
 (defn hello-main [body]
   (str/join "\n"
