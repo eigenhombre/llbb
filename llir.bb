@@ -3,9 +3,9 @@
 (defn target [t] (format "target triple = \"%s\"" t))
 
 (defn global-const-str [var-name s]
-  (format "@%s = private unnamed_addr constant [%d x i8] c\"%s\""
+  (format "@%s = private unnamed_addr constant [%d x i8] c\"%s\\00\""
           var-name
-          (count s)
+          (inc (count s))
           s))
 
 (defn extern-i8* [f-name]
@@ -24,5 +24,5 @@
     call i32 @puts(i8* %%as_ptr)
     ret i32 0
 }
-" (as-ptr (count body) "xxx")))
+" (as-ptr (inc (count body)) "xxx")))
 

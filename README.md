@@ -30,18 +30,18 @@ can be translated to object code using the LLVM toolchain as follows:
     $ cat hello.ll
     target triple = "arm64-apple-macosx14.0.0"
     declare i32 @puts(i8* nocapture) nounwind
-    @xxx = private unnamed_addr constant [12 x i8] c"Hello, World"
+    @xxx = private unnamed_addr constant [13 x i8] c"Hello, World\00"
     define i32 @main() {
-        %as_ptr = getelementptr [12 x i8],[12 x i8]* @xxx, i64 0, i64 0
+        %as_ptr = getelementptr [13 x i8],[13 x i8]* @xxx, i64 0, i64 0
     
         call i32 @puts(i8* %as_ptr)
         ret i32 0
     }
     $ clang -O3 hello.ll -o hello
     $ time ./hello
-    Hello, World
+    Hello, World
     
-    real	0m0.180s
+    real	0m0.178s
     user	0m0.001s
     sys	0m0.002s
 
