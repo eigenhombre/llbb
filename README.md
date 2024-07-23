@@ -42,7 +42,7 @@ can be translated to object code using the LLVM toolchain as follows:
     $ time ./hello
     Hello, World
     
-    real	0m0.171s
+    real	0m0.175s
     user	0m0.001s
     sys	0m0.002s
 
@@ -108,7 +108,8 @@ The equivalent C program is:
     !4 = !{i32 7, !"frame-pointer", i32 1}
     !5 = !{!"Apple clang version 15.0.0 (clang-1500.3.9.4)"}
 
-This is actually fairly simple, and a lot of the boilerplate can boilerplate can be eliminated.  Our next move is going to be to
-extend our Babashka implementation to handle the `alloc`, `load` and
-`store` operations we need.
+This is actually fairly simple, and a lot of the boilerplate can  be
+eliminated.  Our next move is going to be to extend our Babashka
+implementation to handle the `alloc`, `load` and `store` operations we
+need.
 
