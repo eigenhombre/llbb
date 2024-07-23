@@ -30,10 +30,18 @@
        (sort-by str)
        (filter (comp (partial re-find #"ex\d\d") str))))
 
+(defn ex-file-order [f]
+  (let [split (fs/split-ext f)
+        [name, ext] split
+        weights {"md" 0
+                 "cmd" 1}]
+    [name (get weights ext 2)]))
+
 (defn find-matching-files [dir pat]
   (->> dir
        fs/list-dir
-       (filter (comp (partial re-find pat) str))))
+       (filter (comp (partial re-find pat) str))
+       (sort-by ex-file-order)))
 
 (defn get-markdown-and-command-files [dir]
   (find-matching-files dir #"\d\.(?:c?)md$"))
