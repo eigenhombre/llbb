@@ -22,7 +22,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Jul 25 09:44 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Jul 25 09:48 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -30,7 +30,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Jul 25 09:44 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Jul 25 09:48 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -100,7 +100,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Jul 25 09:44 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Jul 25 09:48 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -224,11 +224,11 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.001s
+    real	0m0.002s
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 25 09:44 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 25 09:48 five
 
 One of my favorite things about Go, Rust and C is that they produce
 stand-alone binaries.  We've just started chipping out a path to
@@ -278,7 +278,7 @@ The main addition here is the call to `puts`, which requires both the
 external function definition and the call itself.  The `getelementptr`
 (warning: [dragons](https://llvm.org/docs/GetElementPtr.html)) is used to get the address of the string constant.
 
-# Example 2
+# Argument Counting
 
 Let's make another simple program which accepts a variable number
 of arguments and returns, as its exit code, the number of arguments
