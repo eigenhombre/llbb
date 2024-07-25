@@ -17,7 +17,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Jul 24 21:10 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Jul 25 08:21 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -25,7 +25,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Jul 24 21:10 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Jul 25 08:21 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -93,7 +93,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Jul 24 21:10 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Jul 25 08:21 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -131,6 +131,24 @@ trick of viewing the IR gives (in addition to the usual junk):
       ret i32 0
     }
 
+Can this IR, alone, run?
+
+    $ cat zero.ll
+    define i32 @main() #0 {
+      ret i32 0
+    }
+    $ clang -O3 zero.ll -o zero-min
+    warning: overriding the module target triple with arm64-apple-macosx14.0.0 [-Woverride-module]
+    1 warning generated.
+    $ ./zero-min; echo $?
+    0
+
+If we don't want a warning, we need to add, e.g.,
+
+    target triple = "arm64-apple-macosx14.0.0"
+
+to the top of the file.
+
 If instead I want to return, say, 3, we can:
 
     $ cat three.c
@@ -156,6 +174,11 @@ but instead get:
 Let's try generating some IR with Babashka.
 
     $ cat five.bb
+    (def target "arm64-apple-macosx14.0.0")
+    
+    (defn target-triple [triple]
+      (format "target triple = \"%s\"" triple))
+    
     (defn simple-main [retval]
       (format
        "define i32 @main() {
@@ -163,10 +186,15 @@ Let's try generating some IR with Babashka.
     }
     " retval))
     
-    (spit "five.ll"
-          (format "%s\n%s"
-                  "target triple = \"arm64-apple-macosx14.0.0\""
-                  (simple-main 5)))
+    (defn els [& args]
+      (str/join "\n" args))
+    
+    (spit "five.ll" (els (target-triple target)
+                         (simple-main 5)))
+
+Here I have added tiny helper functions to make
+both a simple `main` function template and a target triple template.  Trying it,
+
     $ bb five.bb
     $ cat five.ll
     target triple = "arm64-apple-macosx14.0.0"
@@ -177,8 +205,9 @@ Let's try generating some IR with Babashka.
     $ ./five; echo $?
     5
 
-It looks like we don't strictly need that `alloca` and `store` stuff
-for this minimal example.
+It worked!  For this minimal example, it looks like we don't strictly
+need that `alloca` and `store` stuff produced by `clang` from our C
+code.
 
 I do want to point out something remarkable.  We have taken a
 high-level "scripting language," plus the LLVM toolchain, and
@@ -186,21 +215,23 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.002s
-    user	0m0.000s
+    real	0m0.003s
+    user	0m0.001s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 24 21:10 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 25 08:21 five
 
 One of my favorite things about Go, Rust and C is that they produce
 stand-alone binaries.  We've just started chipping out a path to
 doing the same with Babashka, a tool typically thought of as primarily
 useful for "scripting."
 
-(Note that I could just as easily use Clojure.  But small Babashka scripts
-run much faster.)
+(Note that I could just as easily have used Clojure.  But small
+Babashka scripts run much faster.)
 
-# More complex examples
+# Hello Word
+
+A little more work gets us to Hello, World:
 
     $ cat hello.bb
     #!/usr/bin/env bb
@@ -208,14 +239,13 @@ run much faster.)
     (load-file "llir.bb")
     
     (defn hello-main [body]
-      (str/join "\n"
-                [(target m1-target)
-                 (extern-i8* "puts")
-                 (global-const-str "xxx" body)
-                 (main-calling-puts body)]))
+      (els (target m1-target)
+           (extern-i8* "puts")
+           (global-const-str "xxx" body)
+           (main-calling-puts body)))
     
-    (print
-     (hello-main (str/join " " *command-line-args*)))
+    (let [hello-str (str/join " " *command-line-args*)]
+      (println (hello-main hello-str)))
     $ ./hello.bb Hello, World > hello.ll
     $ cat hello.ll
     target triple = "arm64-apple-macosx14.0.0"
@@ -232,7 +262,8 @@ run much faster.)
     Hello, World
 
 Note the execution time is reasonably short.  Here `llir.bb` is a small
-utility module in this repository used to generate LLVM IR commands.
+utility module in this repository used to generate LLVM IR commands similar
+to the two we made, above.
 
 # Example 2
 

@@ -32,3 +32,6 @@
     ret i32 %d
 }
 " retval))
+
+(defn els [& args]
+  (str/join "\n" args))

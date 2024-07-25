@@ -3,13 +3,10 @@
 (load-file "llir.bb")
 
 (defn hello-main [body]
-  (str/join "\n"
-            [(target m1-target)
-             (extern-i8* "puts")
-             (global-const-str "xxx" body)
-             (main-calling-puts body)]))
+  (els (target m1-target)
+       (extern-i8* "puts")
+       (global-const-str "xxx" body)
+       (main-calling-puts body)))
 
-(print
- (hello-main (str/join " " *command-line-args*)))
-
-
+(let [hello-str (str/join " " *command-line-args*)]
+  (println (hello-main hello-str)))
