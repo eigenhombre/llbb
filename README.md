@@ -298,7 +298,6 @@ The equivalent C program is:
     4
 
 The IR for this looks like:
-`clang` can be used to generate LLVM IR from C code, as follows:
 
     target triple = "arm64-apple-macosx14.0.0"
 
