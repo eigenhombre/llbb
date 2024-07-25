@@ -26,3 +26,9 @@
 }
 " (as-ptr (inc (count body)) "xxx")))
 
+(defn simple-main [retval]
+  (format
+   "define i32 @main() {
+    ret i32 %d
+}
+" retval))

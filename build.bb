@@ -1,7 +1,13 @@
 #!/usr/bin/env bb
 
-(require '[babashka.fs :as fs])
 (require '[babashka.process :as ps])
+
+(defn basename [file]
+  (str/join "/" (-> file
+                    (str/split #"/")
+                    butlast)))
+
+(defn this-basename [] (basename *file*))
 
 (defn cmd-result-str [dir cmd]
   (let [{:keys [out err]}
@@ -13,81 +19,49 @@
         both (if (seq err)
                (format "%s%s" out err)
                out)]
-    (str/join
-     "\n"
-     (str/split both #"\n"))))
+    (if (seq both)
+      (str/join
+       (for [l (str/split both #"\n")]
+         (format "    %s\n" l)))
+      "")))
 
-(defn basename [file]
-  (str/join "/" (-> file
-                    (str/split #"/")
-                    butlast)))
+(defn expand-command [[_ cmd rest]]
+  (format "    $ %s\n%s"
+          cmd
+          (cmd-result-str
+           (this-basename)
+           cmd)))
 
-(defn this-basename [] (basename *file*))
+(defn expand-shell-commands [s]
+  (clojure.string/replace
+   s
+   #"(?sm)^ {4}\$ (.+?)$$((?:(?!^ {4}\$|^$).*?\n)*)"
+   #_"    \\$ $1\n    NEWERER RESULT\n"
+   expand-command))
 
-(defn find-examples []
-  (->> (this-basename)
-       fs/list-dir
-       (sort-by str)
-       (filter (comp (partial re-find #"ex\d\d") str))))
-
-(defn ex-file-order [f]
-  (let [split (fs/split-ext f)
-        [name, ext] split
-        weights {"md" 0
-                 "cmd" 1}]
-    [name (get weights ext 2)]))
-
-(defn find-matching-files [dir pat]
-  (->> dir
-       fs/list-dir
-       (filter (comp (partial re-find pat) str))
-       (sort-by ex-file-order)))
-
-(defn get-markdown-and-command-files [dir]
-  (find-matching-files dir #"\d\.(?:c?)md$"))
-
-(defn session-str [dir cmds]
-  (str/join "\n"
-            (for [cmd cmds
-                  :let [result (cmd-result-str dir cmd)]]
-              (format "    $ %s%s"
-                      cmd
-                      (if (seq result)
-                        (str "\n"
-                             (str/join
-                              "\n"
-                              (map (partial str "    ")
-                                   (str/split result #"\n"))))
-                        "")))))
-
-
-(defn is-md? [f]
-  (= (fs/extension f) "md"))
-
-(defn is-cmd? [f]
-  (= (fs/extension f) "cmd"))
-
-(defn generate-example [dir ex-files]
-  (str/join "\n\n"
-            (for [f ex-files
-                  :let [contents (slurp (str f))]]
-              (cond
-                (is-md? f) contents
-                (is-cmd? f) (session-str dir (str/split
-                                              contents
-                                              #"\n"))
-                :t (str "UNKNOWN FILE TYPE " f)))))
-
-(defn generate-readme []
+(comment
   (println
-   (str/join
-    "\n\n"
-    (for [[n dir] (map-indexed vector (find-examples))]
-      (format "# Example %s
+   (expand-shell-commands "
 
-%s"
-              (inc n)
-              (generate-example dir
-                                (get-markdown-and-command-files dir)))))))
+This is some stuff
 
-(generate-readme)
+    $ echo Hello World
+    Hello
+    $ no replacement
+    $ echo OK
+    OK
+    $ more stuff
+
+more stuff
+
+
+")))
+
+(defn replace-examples [md-path]
+  (->> md-path
+       slurp
+       expand-shell-commands
+       (spit md-path)))
+
+(replace-examples "README.md")
+(println "OK")
