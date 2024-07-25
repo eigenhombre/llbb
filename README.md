@@ -9,6 +9,11 @@ a powerful compiler toolchain that uses a sort of abstract assembly
 language as it's ["intermediate
 representation"](https://en.wikipedia.org/wiki/Intermediate_representation).
 
+LLVM IR is easily generated using pretty much any programming
+language. Babashka provides the power of Clojure, fast start up speed,
+the REPL, etc. making it a fun way to experiment with LLVM and toy
+languages.
+
 Let's start with the question, what's the minimal compilation "unit" that a C compiler will accept?
 
 Here are some attempts.  First, a tiny bit of numerical state, on its own:
@@ -17,7 +22,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Jul 25 08:27 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Jul 25 09:44 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -25,7 +30,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Jul 25 08:27 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Jul 25 09:44 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -95,7 +100,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Jul 25 08:27 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Jul 25 09:44 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -223,7 +228,7 @@ generated a small, fast binary executable:
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 25 08:27 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 25 09:44 five
 
 One of my favorite things about Go, Rust and C is that they produce
 stand-alone binaries.  We've just started chipping out a path to
@@ -271,14 +276,9 @@ to the two we made, above.
 
 The main addition here is the call to `puts`, which requires both the
 external function definition and the call itself.  The `getelementptr`
-(warning: dragons) is used to get the address of the string constant.
+(warning: [dragons](https://llvm.org/docs/GetElementPtr.html)) is used to get the address of the string constant.
 
 # Example 2
-
-LLVM IR is easily
-generated using pretty much any programming language. Babashka
-provides the power of Clojure, fast start up speed, the REPL, etc.
-making it a fun way to experiment with LLVM and toy languages.
 
 Let's make another simple program which accepts a variable number
 of arguments and returns, as its exit code, the number of arguments
@@ -297,16 +297,11 @@ The equivalent C program is:
     $ ./argcount a b c; echo $?
     4
 
+The IR for this looks like:
 `clang` can be used to generate LLVM IR from C code, as follows:
 
-    $ clang -S -emit-llvm argcount.c -o argcount.ll
-    $ cat argcount.ll
-    ; ModuleID = 'argcount.c'
-    source_filename = "argcount.c"
-    target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128"
     target triple = "arm64-apple-macosx14.0.0"
-    
-    ; Function Attrs: noinline nounwind optnone ssp uwtable(sync)
+
     define i32 @main(i32 noundef %0, ptr noundef %1) #0 {
       %3 = alloca i32, align 4
       %4 = alloca i32, align 4
@@ -317,20 +312,8 @@ The equivalent C program is:
       %6 = load i32, ptr %4, align 4
       ret i32 %6
     }
-    
-    attributes #0 = { noinline nounwind optnone ssp uwtable(sync) "frame-pointer"="non-leaf" "min-legal-vector-width"="0" "no-trapping-math"="true" "probe-stack"="__chkstk_darwin" "stack-protector-buffer-size"="8" "target-cpu"="apple-m1" "target-features"="+aes,+crc,+crypto,+dotprod,+fp-armv8,+fp16fml,+fullfp16,+lse,+neon,+ras,+rcpc,+rdm,+sha2,+sha3,+sm4,+v8.1a,+v8.2a,+v8.3a,+v8.4a,+v8.5a,+v8a,+zcm,+zcz" }
-    
-    !llvm.module.flags = !{!0, !1, !2, !3, !4}
-    !llvm.ident = !{!5}
-    
-    !0 = !{i32 2, !"SDK Version", [2 x i32] [i32 14, i32 4]}
-    !1 = !{i32 1, !"wchar_size", i32 4}
-    !2 = !{i32 8, !"PIC Level", i32 2}
-    !3 = !{i32 7, !"uwtable", i32 1}
-    !4 = !{i32 7, !"frame-pointer", i32 1}
-    !5 = !{!"Apple clang version 15.0.0 (clang-1500.3.9.4)"}
 
 This is actually fairly simple, and a lot of the boilerplate can  be
 eliminated.  Our next move is going to be to extend our Babashka
-implementation to handle the `alloc`, `load` and `store` operations we
+implementation to handle the [SSI](https://en.wikipedia.org/wiki/Static_single-assignment_form), `alloc`, `load` and `store` operations we
 need.
