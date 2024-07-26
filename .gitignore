@@ -2,6 +2,7 @@
 *.ll
 *.o
 argcount
+argcount-smaller
 five
 hello
 three

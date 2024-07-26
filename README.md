@@ -22,7 +22,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Jul 25 09:48 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Jul 26 11:30 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -30,7 +30,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Jul 25 09:48 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Jul 26 11:30 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -100,7 +100,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Jul 25 09:48 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Jul 26 11:30 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -228,7 +228,7 @@ generated a small, fast binary executable:
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 25 09:48 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 26 11:30 five
 
 One of my favorite things about Go, Rust and C is that they produce
 stand-alone binaries.  We've just started chipping out a path to
@@ -297,7 +297,7 @@ The equivalent C program is:
     $ ./argcount a b c; echo $?
     4
 
-The IR for this looks like:
+According to `clang -emit-llvm`, the IR for this looks like:
 
     target triple = "arm64-apple-macosx14.0.0"
 
@@ -312,7 +312,105 @@ The IR for this looks like:
       ret i32 %6
     }
 
-This is actually fairly simple, and a lot of the boilerplate can  be
-eliminated.  Our next move is going to be to extend our Babashka
-implementation to handle the [SSI](https://en.wikipedia.org/wiki/Static_single-assignment_form), `alloc`, `load` and `store` operations we
-need.
+# Fleshing Out the Babashka Implementation
+
+The following Babashka provides a generator we can use to
+experiment with variations in the `argcount` program:
+
+```
+(def m1-target "arm64-apple-macosx14.0.0")
+(defn target [t] (format "target triple = \"%s\"" t))
+
+(def aligns {:i32 4
+             :ptr 8})
+
+(defn name? [x]
+  (if (or (symbol? x) (keyword? x))
+    (name x)
+    x))
+(name? 3)
+(defn farg [typ nam] (format "%s noundef %%%s" (name typ) (name? nam)))
+(defn assign [nam val] (format "%%%s = %s" (name? nam) val))
+(defn alloca [typ] (format "alloca %s, align %d" (name typ) (aligns typ)))
+(defn reg-or-num [v]
+  (if (keyword? v)
+    (format "%%%s" (name v))
+    v))
+(defn store [typ val at]
+  (format "store %s %s, ptr %s, align %d"
+          (name typ)
+          (reg-or-num val)
+          (reg-or-num at)
+          (aligns typ)))
+(defn load [typ from]
+  (format "load %s, ptr %s, align %d"
+          (name typ)
+          (reg-or-num from)
+          (aligns typ)))
+(defn ret [typ val]
+  (format "ret %s %s" (name typ) (reg-or-num val)))
+
+
+(spit
+ "argcount.ll"
+ (els
+  (target m1-target)
+  (def-global-fn :i32 "main" [(farg :i32 0)
+                              (farg :ptr 1)]
+    (assign 3 (alloca :i32))
+    (assign 4 (alloca :i32))
+    (assign 5 (alloca :ptr))
+    (store :i32 0 :3)
+    (store :i32 :0 :4)
+    (store :ptr :1 :5)
+    (assign 6 (load :i32 :4))
+    (ret :i32 :6))))
+```
+
+Running this gives:
+
+    $ cat argcount.ll
+    target triple = "arm64-apple-macosx14.0.0"
+    define i32 @main(i32 noundef %0, ptr noundef %1) nounwind {
+      %3 = alloca i32, align 4
+      %4 = alloca i32, align 4
+      %5 = alloca ptr, align 8
+      store i32 0, ptr %3, align 4
+      store i32 %0, ptr %4, align 4
+      store ptr %1, ptr %5, align 8
+      %6 = load i32, ptr %4, align 4
+      ret i32 %6
+    }
+    $ clang -O3 argcount.ll -o argcount
+    $ ./argcount; echo $?
+    1
+    $ ./argcount a b c d; echo $?
+    5
+
+Some of the IR commands look superfluous to me.  Let's try a reduced
+version, substituting more meaningful names for the registers and
+arguments:
+
+```
+(spit
+ "argcount-smaller.ll"
+ (els
+  (target m1-target)
+  (def-global-fn :i32 "main" [(farg :i32 :arg0)
+                              (farg :ptr :arg1_unused)]
+    (assign :retptr (alloca :i32))
+    (store :i32 :arg0 :retptr)
+    (assign :retval (load :i32 :retptr))
+    (ret :i32 :retval))))
+```
+
+This gives:
+
+    $ clang -O3 argcount-smaller.ll -o argcount-smaller
+    $ ./argcount-smaller; echo $?
+    1
+    $ ./argcount-smaller a b c d; echo $?
+    5
+
+The Babashka wrapper looks superfluous but it is the first stage
+in progressive abstractions to come.
