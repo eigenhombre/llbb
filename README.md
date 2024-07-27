@@ -22,7 +22,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Jul 26 11:32 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Jul 26 21:09 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -30,7 +30,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Jul 26 11:32 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Jul 26 21:09 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -100,7 +100,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Jul 26 11:32 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Jul 26 21:09 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -228,7 +228,7 @@ generated a small, fast binary executable:
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 26 11:32 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 26 21:09 five
 
 One of my favorite things about Go, Rust and C is that they produce
 stand-alone binaries.  We've just started chipping out a path to
@@ -238,46 +238,6 @@ useful for "scripting."
 (Note that I could just as easily have used Clojure.  But small
 Babashka scripts run much faster.)
 
-# Hello Word
-
-A little more work gets us to Hello, World:
-
-    $ cat hello.bb
-    #!/usr/bin/env bb
-    
-    (load-file "llir.bb")
-    
-    (defn hello-main [body]
-      (els (target m1-target)
-           (extern-i8* "puts")
-           (global-const-str "xxx" body)
-           (main-calling-puts body)))
-    
-    (let [hello-str (str/join " " *command-line-args*)]
-      (println (hello-main hello-str)))
-    $ ./hello.bb Hello, World > hello.ll
-    $ cat hello.ll
-    target triple = "arm64-apple-macosx14.0.0"
-    declare i32 @puts(i8* nocapture) nounwind
-    @xxx = private unnamed_addr constant [13 x i8] c"Hello, World\00"
-    define i32 @main() {
-        %as_ptr = getelementptr [13 x i8],[13 x i8]* @xxx, i64 0, i64 0
-    
-        call i32 @puts(i8* %as_ptr)
-        ret i32 0
-    }
-    $ clang -O3 hello.ll -o hello
-    $ ./hello
-    Hello, World
-
-Note the execution time is reasonably short.  Here `llir.bb` is a small
-utility module in this repository used to generate LLVM IR commands similar
-to the two we made, above.
-
-The main addition here is the call to `puts`, which requires both the
-external function definition and the call itself.  The `getelementptr`
-(warning: [dragons](https://llvm.org/docs/GetElementPtr.html)) is used to get the address of the string constant.
-
 # Argument Counting
 
 Let's make another simple program which accepts a variable number
@@ -285,7 +245,6 @@ of arguments and returns, as its exit code, the number of arguments
 given (including the program name itself).
 
 The equivalent C program is:
-
 
     $ cat argcount.c
     int main(int argc, char** argv) {
@@ -412,6 +371,99 @@ This gives:
     $ ./argcount-smaller a b c d; echo $?
     5
 
-The Babashka wrapper is still thin enough at this point to appear
-superfluous, but my hope is to build abstractions on top of it as
-this work proceeds.
+This gives the same result as before.  The Babashka wrapper is still
+thin enough at this point to appear superfluous, but my hope is to
+build abstractions on top of it as this work proceeds.
+
+# Hello World
+
+A little more work gets us to Hello, World.  First, we'll define a few
+more helper functions:
+
+```
+(defn external-fn
+  "
+  Define an externally-available (C) function, in the standard library
+  (for now).  The code should not \"throw an exception\" in the LLVM
+  sense.
+  "
+  [typ fn-name & arg-types]
+  (format "declare %s @%s(%s) nounwind"
+          (name typ)
+          (name fn-name)
+          (str/join ", " (map (comp #(str % " nocapture") name) arg-types))))
+
+(defn call
+  "
+  Invoke `fn-name` returning type `typ` with 0 or more type/arg pairs.
+  E.g.,
+
+  (call :i32 :negate [:i32 :x])
+  ;;=>
+  \"call i32 @negate(i32 %x)\"
+  "
+  [typ fn-name & arg-type-arg-pairs]
+  (format "call %s @%s(%s)"
+          (name typ)
+          (name fn-name)
+          (str/join ", " (for [[typ nam] arg-type-arg-pairs]
+                           (str (name typ) " %" (name? nam))))))
+
+(defn as-ptr
+  "
+  Crude wrapper for getelementptr, just for strings (for now).
+  "
+  [var-name body-len]
+  (format "getelementptr [%d x i8],[%d x i8]* @%s, i64 0, i64 0"
+          body-len body-len (name var-name)))
+```
+
+Note that these wrapper functions are still kind of crude.  There is a lot
+of functionality in the LLVM IR which are are not handling or delving into,
+though the existing code is simple enough to be easily adapted to new use cases.
+
+If we add these, along with the other helper functions defined above,
+to a new file `llir.bb`, our Hello, World example can then be
+
+    $ cat hello.bb
+    #!/usr/bin/env bb
+    
+    (load-file "llir.bb")
+    
+    (let [hello-str (str/join " " *command-line-args*)]
+      (println
+       (els (target m1-target)
+            (external-fn :i32 :puts :i8*)
+            (global-const-str :message hello-str)
+            (def-global-fn :i32 "main" []
+              (assign :as_ptr (as-ptr :message (inc (count hello-str))))
+              (call :i32 :puts [:i8* :as_ptr])
+              (ret :i32 0)))))
+    $ ./hello.bb Hello, World > hello.ll
+    $ cat hello.ll
+    target triple = "arm64-apple-macosx14.0.0"
+    declare i32 @puts(i8* nocapture) nounwind
+    @message = private unnamed_addr constant [13 x i8] c"Hello, World\00"
+    define i32 @main() nounwind {
+      %as_ptr = getelementptr [13 x i8],[13 x i8]* @message, i64 0, i64 0
+      call i32 @puts(i8* %as_ptr)
+      ret i32 0
+    }
+    $ clang -O3 hello.ll -o hello
+    $ ./hello
+    Hello, World
+
+The main addition here is the call to `puts`, which requires both the
+external function definition and the call itself.  The `getelementptr`
+(warning: [dragons](https://llvm.org/docs/GetElementPtr.html)) is used
+to get the address of the string constant.
+
+Note that the output of the program is "compiled into" the binary program:
+
+    $ ./hello.bb The spice must flow. > spice.ll
+    $ clang -O3 spice.ll -o spice
+    $ ./spice
+    The spice must flow.
+
+In a sense, we have built a tiny compiler for a language that consists solely
+of single strings to be printed.

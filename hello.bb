@@ -2,11 +2,12 @@
 
 (load-file "llir.bb")
 
-(defn hello-main [body]
-  (els (target m1-target)
-       (extern-i8* "puts")
-       (global-const-str "xxx" body)
-       (main-calling-puts body)))
-
 (let [hello-str (str/join " " *command-line-args*)]
-  (println (hello-main hello-str)))
+  (println
+   (els (target m1-target)
+        (external-fn :i32 :puts :i8*)
+        (global-const-str :message hello-str)
+        (def-global-fn :i32 "main" []
+          (assign :as_ptr (as-ptr :message (inc (count hello-str))))
+          (call :i32 :puts [:i8* :as_ptr])
+          (ret :i32 0)))))

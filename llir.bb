@@ -2,36 +2,17 @@
 
 (defn target [t] (format "target triple = \"%s\"" t))
 
-(defn global-const-str [var-name s]
-  (format "@%s = private unnamed_addr constant [%d x i8] c\"%s\\00\""
-          var-name
-          (inc (count s))
-          s))
-
 (defn extern-i8* [f-name]
   (format "declare i32 @%s(i8* nocapture) nounwind"
           f-name))
 
-(defn as-ptr [body-len var-name]
+(defn as-ptr
+  "
+  Crude wrapper for getelementptr, just for strings (for now).
+  "
+  [var-name body-len]
   (format "getelementptr [%d x i8],[%d x i8]* @%s, i64 0, i64 0"
-          body-len body-len var-name))
-
-(defn main-calling-puts [body]
-  (format
-   "define i32 @main() {
-    %%as_ptr = %s
-
-    call i32 @puts(i8* %%as_ptr)
-    ret i32 0
-}
-" (as-ptr (inc (count body)) "xxx")))
-
-(defn simple-main [retval]
-  (format
-   "define i32 @main() {
-    ret i32 %d
-}
-" retval))
+          body-len body-len (name var-name)))
 
 (defn els [& args]
   (str/join "\n" args))
@@ -55,27 +36,65 @@
   (if (or (symbol? x) (keyword? x))
     (name x)
     x))
-(name? 3)
+
+(defn global-const-str [var-name s]
+  (format "@%s = private unnamed_addr constant [%d x i8] c\"%s\\00\""
+          (name? var-name)
+          (inc (count s))
+          s))
+
 (defn farg [typ nam] (format "%s noundef %%%s" (name typ) (name? nam)))
 (defn assign [nam val] (format "%%%s = %s" (name? nam) val))
 (defn alloca [typ] (format "alloca %s, align %d" (name typ) (aligns typ)))
+
 (defn reg-or-num [v]
   (if (keyword? v)
     (format "%%%s" (name v))
     v))
+
 (defn store [typ val at]
   (format "store %s %s, ptr %s, align %d"
           (name typ)
           (reg-or-num val)
           (reg-or-num at)
           (aligns typ)))
+
 (defn load [typ from]
   (format "load %s, ptr %s, align %d"
           (name typ)
           (reg-or-num from)
           (aligns typ)))
+
 (defn ret [typ val]
   (format "ret %s %s" (name typ) (reg-or-num val)))
+
+(defn external-fn
+  "
+  Define an externally-available (C) function, in the standard library
+  (for now).  The code should not \"throw an exception\" in the LLVM
+  sense.
+  "
+  [typ fn-name & arg-types]
+  (format "declare %s @%s(%s) nounwind"
+          (name typ)
+          (name fn-name)
+          (str/join ", " (map (comp #(str % " nocapture") name) arg-types))))
+
+(defn call
+  "
+  Invoke `fn-name` returning type `typ` with 0 or more type/arg pairs.
+  E.g.,
+
+  (call :i32 :negate [:i32 :x])
+  ;;=>
+  \"call i32 @negate(i32 %x)\"
+  "
+  [typ fn-name & arg-type-arg-pairs]
+  (format "call %s @%s(%s)"
+          (name typ)
+          (name fn-name)
+          (str/join ", " (for [[typ nam] arg-type-arg-pairs]
+                           (str (name typ) " %" (name? nam))))))
 
 (comment
   (spit
@@ -104,4 +123,3 @@
       (store :i32 :arg0 :retptr)
       (assign :retval (load :i32 :retptr))
       (ret :i32 :retval)))))
-
