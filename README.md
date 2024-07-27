@@ -11,10 +11,11 @@ representation"](https://en.wikipedia.org/wiki/Intermediate_representation).
 
 LLVM IR is easily generated using pretty much any programming
 language. Babashka provides the power of Clojure, fast start up speed,
-the REPL, etc. making it a fun way to experiment with LLVM and toy
+the REPL, etc., making it a fun way to experiment with LLVM and toy
 languages.
 
-Let's start with the question, what's the minimal compilation "unit" that a C compiler will accept?
+Let's start with the question, what's the minimal semantic unit of compilation
+that the C compiler will accept?
 
 Here are some attempts.  First, a tiny bit of numerical state, on its own:
 
@@ -22,7 +23,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Jul 26 21:09 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Jul 26 21:16 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -30,7 +31,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Jul 26 21:09 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Jul 26 21:16 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -54,9 +55,15 @@ One can view the LLVM output for a C file:
     !5 = !{!"Apple clang version 15.0.0 (clang-1500.3.9.4)"}
 
 There's a lot of stuff there, but most of it looks like metadata
-we can ignore for the time being.
+we can ignore for the time being.  (Note that most of the time I will
+write `clang` to indicate we are doing something LLVM-specific,
+and `cc` to indicate more general behavior, though on my system the two
+are the same:
 
-How about a minimal function?
+    $ cc
+    clang: error: no input files
+
+What would a minimal function look like?
 
     $ clang -S -emit-llvm minfun.c -o minfun.ll
     $ cat minfun.ll
@@ -82,7 +89,7 @@ How about a minimal function?
     !4 = !{i32 7, !"frame-pointer", i32 1}
     !5 = !{!"Apple clang version 15.0.0 (clang-1500.3.9.4)"}
 
-If I rip out all the extra junk I get what looks like the significant
+If I rip out a lot of extra junk, I get what looks like the significant
 bits:
 
     # min.c:
@@ -91,7 +98,7 @@ bits:
 
     # minfun.c:
     target triple = "arm64-apple-macosx14.0.0"
-    define void @x() #0 {
+    define void @x() {
       ret void
     }
 
@@ -100,7 +107,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Jul 26 21:09 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Jul 26 21:16 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -228,15 +235,21 @@ generated a small, fast binary executable:
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 26 21:09 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 26 21:16 five
 
 One of my favorite things about Go, Rust and C is that they produce
-stand-alone binaries.  We've just started chipping out a path to
-doing the same with Babashka, a tool typically thought of as primarily
-useful for "scripting."
+relatively small, stand-alone binaries, compared with the massive
+uberjar files involved in shipping Java/Clojure apps, Python
+Eggs/virtualenvs/etc., etc.).
 
-(Note that I could just as easily have used Clojure.  But small
-Babashka scripts run much faster.)
+We've just started chipping out a path to building tiny executables
+using Babashka, a tool typically thought of as primarily useful for
+"scripting," leveraging LLVM's assembly-language-like IR and tooling
+to get us close to the metal.
+
+(Note that I could just as easily have used Clojure instead of
+Babashka to produce the IR.  But small Babashka scripts run much
+faster.)
 
 # Argument Counting
 
