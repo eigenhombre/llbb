@@ -58,10 +58,7 @@ There's a lot of stuff there, but most of it looks like metadata
 we can ignore for the time being.  (Note that most of the time I will
 write `clang` to indicate we are doing something LLVM-specific,
 and `cc` to indicate more general behavior, though on my system the two
-are the same:
-
-    $ cc
-    clang: error: no input files
+are the same).
 
 What would a minimal function look like?
 
