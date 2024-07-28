@@ -477,3 +477,98 @@ Note that the output of the program is "compiled into" the binary program:
 
 In a sense, we have built a tiny compiler for a language that consists solely
 of single strings to be printed.
+
+# Building A Compiling Calculator
+
+Armed with some of these tools, we can start to build a simple
+language that can do integer math.  We will take some of the basics of
+[Forth](https://en.wikipedia.org/wiki/Forth_(programming_language)), a
+language from the 1970s still in use today (especially in small
+embedded systems), and build a simple calculator.
+
+LLVM will handle the parts commonly known as "compiler backend" tasks,
+and Babashka will provide our "frontend," namely breaking the text into
+tokens and parsing them.  This task is made easy for us, because Forth
+is syntactically quite simple, and Babashka relatively powerful.
+
+```
+(def example "
+
+2 2 +  \\ 4
+5 *    \\ 20
+2 /    \\ 10
+-1 +   \\ add -1
+.      \\ prints 9
+
+
+")
+
+(defn strip-comments
+  "
+  Remove parts of lines beginning with backslash
+  "
+  [s]
+  (str/replace s #"(?sm)^(.+?)\\.*?$" "$1"))
+
+(defn tokenize
+  "
+  Split `s` on any kind of whitespace
+  "
+  [s]
+  (str/split s #"\s+"))
+
+(defrecord node
+    [typ val] ;; A node has a type and a value
+  Object
+  (toString [this]
+    (format "[%s %s]" (:typ this) (:val this))))
+
+;; Allowed operations
+(def opmap {"+" :plus
+            "-" :minus
+            "/" :div
+            "*" :mul
+            "." :dot
+            "drop" :drop})
+
+(defn ast
+  "
+  Convert a list of tokens into an \"abstract syntax tree\",
+  which in our Forth is just a list of type/value pairs.
+  "
+  [tokens]
+  (for [t tokens
+        :let [op (get opmap t)]]
+    (cond
+      ;; Integers (possibly negative)
+      (re-matches #"^\-?\d+$" t)
+      (node. :num (Integer. t))
+
+      ;; Operations
+      op (node. :op op)
+
+      :else (node. :invalid :invalid))))
+
+(comment
+  (->> example
+       strip-comments
+       tokenize
+       (remove empty?)
+       ast
+       (map str))
+  ;;=>
+  '("[:num 2]"
+    "[:num 2]"
+    "[:op :plus]"
+    "[:num 5]"
+    "[:op :mul]"
+    "[:num 2]"
+    "[:op :div]"
+    "[:num -1]"
+    "[:op :plus]"
+    "[:op :dot]"))
+```
+
+These functions are collected in a file `forth.bb`.  Our next step
+will be to use them to generate the appropriate LLVM IR for a given
+input.
