@@ -23,7 +23,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Jul 26 21:16 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Aug  1 18:32 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -31,7 +31,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Jul 26 21:16 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Aug  1 18:32 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -104,7 +104,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Jul 26 21:16 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Aug  1 18:32 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -228,11 +228,11 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.002s
+    real	0m0.001s
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Jul 26 21:16 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Aug  1 18:32 five
 
 One of my favorite things about Go, Rust and C is that they produce
 relatively small, stand-alone binaries, compared with the massive
@@ -572,3 +572,119 @@ is syntactically quite simple, and Babashka relatively powerful.
 These functions are collected in a file `forth.bb`.  Our next step
 will be to use them to generate the appropriate LLVM IR for a given
 input.
+
+# Building the Calculator -- IR "sketch"
+
+Though we'll eventually write Babashka code for it, here is a working
+example of the IR we want to generate.  We will support the following operations:
+push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
+
+    $ cat stack.ll
+    target triple = "arm64-apple-macosx14.0.0"
+    
+    declare i32 @puts(i8* nocapture) nounwind
+    declare i32 @printf(i8*, ...) nounwind
+    
+    @format_str = private unnamed_addr constant [4 x i8] c"%d\0A\00"
+    
+    ; Define a type for the stack
+    %Stack = type [1000 x i32]
+    
+    @globalstack = common global %Stack zeroinitializer, align 4
+    @global_stack_ptr = common global i32 0, align 4
+    
+    define i32 @push(i32 %value) {
+        ;; push value on global stack:
+        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
+        %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %global_stack_ptr1
+        store i32 %value, i32* %global_array_ptr, align 4
+        ;; increment global stack pointer:
+        %global_stack_ptr2 = add i32 %global_stack_ptr1, 1
+        store i32 %global_stack_ptr2, i32* @global_stack_ptr, align 4
+        ret i32 %global_stack_ptr2
+    }
+    
+    define i32 @pop() {
+        ;; decrement global stack pointer:
+        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
+        %cond = icmp eq i32 %global_stack_ptr1, 0
+        br i1 %cond, label %end, label %body
+    
+        body:
+            %global_stack_ptr2 = sub i32 %global_stack_ptr1, 1
+            store i32 %global_stack_ptr2, i32* @global_stack_ptr, align 4
+            ;; pop value from global stack:
+            %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %global_stack_ptr2
+            %value = load i32, i32* %global_array_ptr, align 4
+            ret i32 %value
+        end:
+            ret i32 0  ;; return 0 if stack is empty
+    }
+    
+    ;; print the value at the top of the stack; if the stack is empty, print nothing:
+    define void @dot() {
+        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
+        %cond = icmp eq i32 %global_stack_ptr1, 0
+        br i1 %cond, label %end, label %body
+    
+        body:
+            %global_stack_ptr_top = sub i32 %global_stack_ptr1, 1
+            %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %global_stack_ptr_top
+            %value = load i32, i32* %global_array_ptr, align 4
+    
+            ;; Print the value:
+            %as_ptr = getelementptr [4 x i8], [4 x i8]* @format_str, i64 0, i64 0
+            call i32 (i8*, ...) @printf(i8* %as_ptr, i32 %value)
+            br label %end
+        end:
+        ret void
+    }
+    
+    define void @mul() {
+        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
+        ;; make sure there are at least two items on the stack; no-op if not:
+        %cond = icmp slt i32 %global_stack_ptr1, 2
+        br i1 %cond, label %end, label %body
+    
+        body:
+            %value1 = call i32 @pop()
+            %value2 = call i32 @pop()
+            ;; multiply and push result on stack using @push:
+            %result = mul i32 %value1, %value2
+            call i32 @push(i32 %result)
+            br label %end
+        end:
+        ret void
+    }
+    
+    define i32 @main() {
+        call void @dot()  ;; prints nothing
+        call i32 @push(i32 66)
+        call void @dot()  ;; prints 66
+        call i32 @push(i32 77)
+        call void @dot()  ;; 77
+        ;; multiply top two items, putting result on top of stack:
+        call void @mul()
+        call void @dot()  ;; 66*77
+    
+        %value = call i32 @pop()
+        call void @dot()  ;; does not print
+        call i32 @pop()   ;; for now, no error handling...
+        ret i32 0
+    }
+
+Running this gives:
+
+    $ clang -O3 stack.ll -o stack
+    $ ./stack
+    66
+    77
+    5082
+
+A few salient features jump out.  First, the `mul`, `push`, `pop`, and
+`dot` functions are all pretty simple, and `main` is a simple sequence
+of these.  Second, errors are handled silently, and that's probably not
+what we want in our "production" calculator.
+
+Let's start fleshing out the Babashka generator and add some error handling
+along the way.
