@@ -23,7 +23,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Aug  1 18:32 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Aug  1 22:09 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -31,7 +31,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Aug  1 18:32 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Aug  1 22:09 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -104,7 +104,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Aug  1 18:32 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Aug  1 22:09 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -232,7 +232,7 @@ generated a small, fast binary executable:
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Aug  1 18:32 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Aug  1 22:09 five
 
 One of my favorite things about Go, Rust and C is that they produce
 relatively small, stand-alone binaries, compared with the massive
@@ -582,7 +582,6 @@ push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
     $ cat stack.ll
     target triple = "arm64-apple-macosx14.0.0"
     
-    declare i32 @puts(i8* nocapture) nounwind
     declare i32 @printf(i8*, ...) nounwind
     
     @format_str = private unnamed_addr constant [4 x i8] c"%d\0A\00"
@@ -591,31 +590,45 @@ push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
     %Stack = type [1000 x i32]
     
     @globalstack = common global %Stack zeroinitializer, align 4
-    @global_stack_ptr = common global i32 0, align 4
+    @numstack = common global i32 0, align 4
     
-    define i32 @push(i32 %value) {
+    define i32 @get_stack_cnt() {
+        %global_stack_ptr1 = load i32, i32* @numstack, align 4
+        ret i32 %global_stack_ptr1
+    }
+    
+    define void @add_to_stack_cnt(i32 %value) {
+        %sp0 = call i32 @get_stack_cnt()
+        %sp1 = add i32 %sp0, %value
+        store i32 %sp1, i32* @numstack, align 4
+        ret void
+    }
+    
+    define void @push(i32 %value) {
         ;; push value on global stack:
-        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
-        %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %global_stack_ptr1
+        %sp = call i32 @get_stack_cnt()
+        %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %sp
         store i32 %value, i32* %global_array_ptr, align 4
         ;; increment global stack pointer:
-        %global_stack_ptr2 = add i32 %global_stack_ptr1, 1
-        store i32 %global_stack_ptr2, i32* @global_stack_ptr, align 4
-        ret i32 %global_stack_ptr2
+        call void @add_to_stack_cnt(i32 1)
+        ret void
+    }
+    
+    define i32 @item_at(i32 %sp) {
+        %idx1 = sub i32 %sp, 1
+        %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %idx1
+        %value = load i32, i32* %global_array_ptr, align 4
+        ret i32 %value
     }
     
     define i32 @pop() {
-        ;; decrement global stack pointer:
-        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
-        %cond = icmp eq i32 %global_stack_ptr1, 0
+        %sp = call i32 @get_stack_cnt()
+        %cond = icmp eq i32 %sp, 0
         br i1 %cond, label %end, label %body
     
         body:
-            %global_stack_ptr2 = sub i32 %global_stack_ptr1, 1
-            store i32 %global_stack_ptr2, i32* @global_stack_ptr, align 4
-            ;; pop value from global stack:
-            %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %global_stack_ptr2
-            %value = load i32, i32* %global_array_ptr, align 4
+            %value = call i32 @item_at(i32 %sp)
+            call void @add_to_stack_cnt(i32 -1)
             ret i32 %value
         end:
             ret i32 0  ;; return 0 if stack is empty
@@ -623,15 +636,12 @@ push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
     
     ;; print the value at the top of the stack; if the stack is empty, print nothing:
     define void @dot() {
-        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
-        %cond = icmp eq i32 %global_stack_ptr1, 0
+        %sp = call i32 @get_stack_cnt()
+        %cond = icmp eq i32 %sp, 0
         br i1 %cond, label %end, label %body
     
         body:
-            %global_stack_ptr_top = sub i32 %global_stack_ptr1, 1
-            %global_array_ptr = getelementptr %Stack, %Stack* @globalstack, i32 0, i32 %global_stack_ptr_top
-            %value = load i32, i32* %global_array_ptr, align 4
-    
+            %value = call i32 @item_at(i32 %sp)
             ;; Print the value:
             %as_ptr = getelementptr [4 x i8], [4 x i8]* @format_str, i64 0, i64 0
             call i32 (i8*, ...) @printf(i8* %as_ptr, i32 %value)
@@ -641,9 +651,9 @@ push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
     }
     
     define void @mul() {
-        %global_stack_ptr1 = load i32, i32* @global_stack_ptr, align 4
+        %sp = call i32 @get_stack_cnt()
         ;; make sure there are at least two items on the stack; no-op if not:
-        %cond = icmp slt i32 %global_stack_ptr1, 2
+        %cond = icmp slt i32 %sp, 2
         br i1 %cond, label %end, label %body
     
         body:
@@ -651,7 +661,7 @@ push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
             %value2 = call i32 @pop()
             ;; multiply and push result on stack using @push:
             %result = mul i32 %value1, %value2
-            call i32 @push(i32 %result)
+            call void @push(i32 %result)
             br label %end
         end:
         ret void
@@ -659,9 +669,9 @@ push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
     
     define i32 @main() {
         call void @dot()  ;; prints nothing
-        call i32 @push(i32 66)
+        call void @push(i32 66)
         call void @dot()  ;; prints 66
-        call i32 @push(i32 77)
+        call void @push(i32 77)
         call void @dot()  ;; 77
         ;; multiply top two items, putting result on top of stack:
         call void @mul()
