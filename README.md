@@ -23,7 +23,7 @@ Here are some attempts.  First, a tiny bit of numerical state, on its own:
     int x = 3;
     $ cc -c min.c
     $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Aug  1 22:09 min.o
+    -rw-r--r--  1 jacobsen  staff  464 Aug  1 22:18 min.o
 
 How about this one?  A void function of no arguments, that does nothing:
 
@@ -31,7 +31,7 @@ How about this one?  A void function of no arguments, that does nothing:
     void x(void) {}
     $ cc -c minfun.c
     $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Aug  1 22:09 minfun.o
+    -rw-r--r--  1 jacobsen  staff  504 Aug  1 22:18 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -104,7 +104,7 @@ Can you get even more minimal?
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
     $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Aug  1 22:09 empty.o
+    -rw-r--r--  1 jacobsen  staff  336 Aug  1 22:18 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -232,7 +232,7 @@ generated a small, fast binary executable:
     user	0m0.000s
     sys	0m0.001s
     $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Aug  1 22:09 five
+    -rwxr-xr-x  1 jacobsen  staff  16840 Aug  1 22:18 five
 
 One of my favorite things about Go, Rust and C is that they produce
 relatively small, stand-alone binaries, compared with the massive
@@ -697,4 +697,25 @@ of these.  Second, errors are handled silently, and that's probably not
 what we want in our "production" calculator.
 
 Let's start fleshing out the Babashka generator and add some error handling
-along the way.
+along the way.  But first, how do we view the assembler output corresponding
+to our LLVM?
+
+    $ clang -O3 -S stack.ll -o stack.s
+    $ head stack.s
+    	.section	__TEXT,__text,regular,pure_instructions
+    	.build_version macos, 14, 0
+    	.globl	_get_stack_cnt                  ; -- Begin function get_stack_cnt
+    	.p2align	2
+    _get_stack_cnt:                         ; @get_stack_cnt
+    ; %bb.0:
+    Lloh0:
+    	adrp	x8, _numstack@GOTPAGE
+    Lloh1:
+    	ldr	x8, [x8, _numstack@GOTPAGEOFF]
+
+The resulting assembler is not even three times longer than the LLVM IR.
+
+    $ wc -l stack.s stack.ll
+         282 stack.s
+         102 stack.ll
+         384 total
