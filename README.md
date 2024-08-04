@@ -237,9 +237,9 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.002s
-    user	0m0.000s
-    sys	0m0.001s
+    real	0m0.004s
+    user	0m0.001s
+    sys	0m0.002s
     $ wc -c five
        16840 five
 
@@ -743,22 +743,19 @@ Forth-like calculator:
     $ cat example.fs
     \\ "Forth" calculator example
     
-    66
-    .   \\ prints \"66\"
-    77
-    .   \\ prints \"77\"
-    *   \\ 66 * 77 = 5082
-    .   \\ prints \"5082\"
+    66  \\ push 66 on stack
+    .   \\ print item on top of stack; prints "66"
+    77  \\ push 77 on stack
+    .   \\ prints "77"
+    *   \\ pop top two items on stack and put their product 66 * 77 = 5082 on stack
+    .   \\ prints "5082"
     $ ./forth.bb example.fs  # Creates example.ll
     $ clang -O3 example.ll -o example
     $ ./example
     66
     77
     5082
-    $ time ./example
-    66
-    77
-    5082
+    $ time ./example > /dev/null
     
     real	0m0.002s
     user	0m0.000s
