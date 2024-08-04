@@ -1,12 +1,16 @@
+# Building Compact Programs In Your Own Programming Language
+
 **NOTE** What follows are notes in progress, shown while they are
 being written ... expect radical changes for the time being.
 
-Can you write a compiler using [Babashka](https://babashka.org/)?  I
-mean a "real" compiler that will ultimately yield compact object code?
-Is it even possible, or is it totally bonkers?  I recently got
-interested in answering the question using [LLVM](https://llvm.org/),
-a powerful compiler toolchain that uses a sort of abstract assembly
-language as it's ["intermediate
+Can you write a compiler with the help of [Babashka](https://babashka.org/)?
+
+How does one create small, self-contained programs in a new
+programming language, that start and run quickly?
+
+I recently got interested in these answering questions using
+[LLVM](https://llvm.org/), a powerful compiler toolchain that uses a
+sort of abstract assembly language as it's ["intermediate
 representation"](https://en.wikipedia.org/wiki/Intermediate_representation).
 
 LLVM IR is easily generated using pretty much any programming
@@ -14,24 +18,29 @@ language. Babashka provides the power of Clojure, fast start up speed,
 the REPL, etc., making it a fun way to experiment with LLVM and toy
 languages.
 
-Let's start with the question, what's the minimal semantic unit of compilation
-that the C compiler will accept?
+# First Steps
 
-Here are some attempts.  First, a tiny bit of numerical state, on its own:
+Let's start with the question, what's the minimal semantic unit of compilation
+that the C compiler will accept, and how do these look in LLVM IR?
+
+Let's start with a tiny bit of numerical state, on its own:
 
     $ cat min.c
     int x = 3;
     $ cc -c min.c
-    $ ls -l min.o
-    -rw-r--r--  1 jacobsen  staff  464 Aug  1 22:18 min.o
+    $ wc -c min.o
+         464 min.o
+
+This just provides a single value which could be used by some other function,
+brought together at some future time using the linker.
 
 How about this one?  A void function of no arguments, that does nothing:
 
     $ cat minfun.c
     void x(void) {}
     $ cc -c minfun.c
-    $ ls -l minfun.o
-    -rw-r--r--  1 jacobsen  staff  504 Aug  1 22:18 minfun.o
+    $ wc -c minfun.o
+         504 minfun.o
 
 One can view the LLVM output for a C file:
 
@@ -103,8 +112,8 @@ Can you get even more minimal?
 
     $ cat empty.c  # This file is literally empty
     $ cc -c empty.c
-    $ ls -l empty.o
-    -rw-r--r--  1 jacobsen  staff  336 Aug  1 22:18 empty.o
+    $ wc -c empty.o
+         336 empty.o
     $ clang -S -emit-llvm empty.c -o empty.ll
     $ cat empty.ll
     ; ModuleID = 'empty.c'
@@ -154,7 +163,7 @@ Can this IR, alone, run?
     $ ./zero-min; echo $?
     0
 
-If we don't want a warning, we need to add, e.g.,
+If we don't want the warning, we need to add, e.g.,
 
     target triple = "arm64-apple-macosx14.0.0"
 
@@ -228,16 +237,16 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.001s
+    real	0m0.002s
     user	0m0.000s
     sys	0m0.001s
-    $ ls -l five
-    -rwxr-xr-x  1 jacobsen  staff  16840 Aug  1 22:18 five
+    $ wc -c five
+       16840 five
 
 One of my favorite things about Go, Rust and C is that they produce
 relatively small, stand-alone binaries, compared with the massive
 uberjar files involved in shipping Java/Clojure apps, Python
-Eggs/virtualenvs/etc., etc.).
+Eggs / virtualenvs / etc.
 
 We've just started chipping out a path to building tiny executables
 using Babashka, a tool typically thought of as primarily useful for
@@ -445,15 +454,18 @@ to a new file `llir.bb`, our Hello, World example can then be
        (els (target m1-target)
             (external-fn :i32 :puts :i8*)
             (def-global-const-str :message hello-str)
-            (def-global-fn :i32 "main" []
+            (def-fn :i32 :main []
               (assign :as_ptr (as-ptr :message (inc (count hello-str))))
               (call :i32 :puts [:i8* :as_ptr])
               (ret :i32 0)))))
     $ ./hello.bb Hello, World > hello.ll
     $ cat hello.ll
     target triple = "arm64-apple-macosx14.0.0"
+    
     declare i32 @puts(i8* nocapture) nounwind
+    
     @message = private unnamed_addr constant [13 x i8] c"Hello, World\00"
+    
     define i32 @main() nounwind {
       %as_ptr = getelementptr [13 x i8],[13 x i8]* @message, i64 0, i64 0
       call i32 @puts(i8* %as_ptr)
@@ -491,85 +503,87 @@ and Babashka will provide our "frontend," namely breaking the text into
 tokens and parsing them.  This task is made easy for us, because Forth
 is syntactically quite simple, and Babashka relatively powerful.
 
-```
-(def example "
+## Front End
 
-2 2 +  \\ 4
-5 *    \\ 20
-2 /    \\ 10
--1 +   \\ add -1
-.      \\ prints 9
+The front end parser is very simple.  
 
+    $ cat parse.bb
+    (defn strip-comments
+      "
+      Remove parts of lines beginning with backslash
+      "
+      [s]
+      (str/replace s #"(?sm)^(.*?)\\.*?$" "$1"))
+    
+    (defn tokenize
+      "
+      Split `s` on any kind of whitespace
+      "
+      [s]
+      (remove empty? (str/split s #"\s+")))
+    
+    (defrecord node
+        [typ val] ;; A node has a type and a value
+      Object
+      (toString [this]
+        (format "[%s %s]" (:typ this) (:val this))))
+    
+    ;; Allowed operations
+    (def opmap {"+" :plus
+                "-" :minus
+                "/" :div
+                "*" :mul
+                "." :dot
+                "drop" :drop})
+    
+    (defn ast
+      "
+      Convert a list of tokens into an \"abstract syntax tree\",
+      which in our Forth is just a list of type/value pairs.
+      "
+      [tokens]
+      (for [t tokens
+            :let [op (get opmap t)]]
+        (cond
+          ;; Integers (possibly negative)
+          (re-matches #"^\-?\d+$" t)
+          (node. :num (Integer. t))
+    
+          ;; Operations
+          op (node. :op op)
+    
+          :else (node. :invalid :invalid))))
+    
+    (comment
+      (def example "
+    
+    2 2 +  \\ 4
+    5 *    \\ 20
+    2 /    \\ 10
+    -1 +   \\ add -1
+    .      \\ prints 9
+    
+    
+    ")
+    
+      (->> example
+           strip-comments
+           tokenize
+           ast
+           (map str))
+      ;;=>
+      '("[:num 2]"
+        "[:num 2]"
+        "[:op :plus]"
+        "[:num 5]"
+        "[:op :mul]"
+        "[:num 2]"
+        "[:op :div]"
+        "[:num -1]"
+        "[:op :plus]"
+        "[:op :dot]"))
 
-")
-
-(defn strip-comments
-  "
-  Remove parts of lines beginning with backslash
-  "
-  [s]
-  (str/replace s #"(?sm)^(.+?)\\.*?$" "$1"))
-
-(defn tokenize
-  "
-  Split `s` on any kind of whitespace
-  "
-  [s]
-  (str/split s #"\s+"))
-
-(defrecord node
-    [typ val] ;; A node has a type and a value
-  Object
-  (toString [this]
-    (format "[%s %s]" (:typ this) (:val this))))
-
-;; Allowed operations
-(def opmap {"+" :plus
-            "-" :minus
-            "/" :div
-            "*" :mul
-            "." :dot
-            "drop" :drop})
-
-(defn ast
-  "
-  Convert a list of tokens into an \"abstract syntax tree\",
-  which in our Forth is just a list of type/value pairs.
-  "
-  [tokens]
-  (for [t tokens
-        :let [op (get opmap t)]]
-    (cond
-      ;; Integers (possibly negative)
-      (re-matches #"^\-?\d+$" t)
-      (node. :num (Integer. t))
-
-      ;; Operations
-      op (node. :op op)
-
-      :else (node. :invalid :invalid))))
-
-(comment
-  (->> example
-       strip-comments
-       tokenize
-       (remove empty?)
-       ast
-       (map str))
-  ;;=>
-  '("[:num 2]"
-    "[:num 2]"
-    "[:op :plus]"
-    "[:num 5]"
-    "[:op :mul]"
-    "[:num 2]"
-    "[:op :div]"
-    "[:num -1]"
-    "[:op :plus]"
-    "[:op :dot]"))
-```
-
-These functions are collected in a file `forth.bb`.  Our next step
+These functions are collected in `parse.bb`.  Our next step
 will be to use them to generate the appropriate LLVM IR for a given
 input.
 
@@ -589,12 +603,13 @@ push, pop, multiply, and "dot" (`.`), which prints the top of the stack.
     ; Define a type for the stack
     %Stack = type [1000 x i32]
     
-    @globalstack = common global %Stack zeroinitializer, align 4
-    @numstack = common global i32 0, align 4
+    @globalstack = global %Stack zeroinitializer
+    
+    @numstack = global i32 0
     
     define i32 @get_stack_cnt() {
-        %global_stack_ptr1 = load i32, i32* @numstack, align 4
-        ret i32 %global_stack_ptr1
+        %sp = load i32, i32* @numstack, align 4
+        ret i32 %sp
     }
     
     define void @add_to_stack_cnt(i32 %value) {
@@ -709,13 +724,43 @@ to our LLVM?
     _get_stack_cnt:                         ; @get_stack_cnt
     ; %bb.0:
     Lloh0:
-    	adrp	x8, _numstack@GOTPAGE
+    	adrp	x8, _numstack@PAGE
     Lloh1:
-    	ldr	x8, [x8, _numstack@GOTPAGEOFF]
+    	ldr	w0, [x8, _numstack@PAGEOFF]
 
 The resulting assembler is not even three times longer than the LLVM IR.
 
     $ wc -l stack.s stack.ll
-         282 stack.s
-         102 stack.ll
-         384 total
+         262 stack.s
+         103 stack.ll
+         365 total
+
+# Putting The Pieces Together
+
+The program `forth.bb` uses the IR generator and the front end to make a tiny
+Forth-like calculator:
+
+    $ cat example.fs
+    \\ "Forth" calculator example
+    
+    66
+    .   \\ prints \"66\"
+    77
+    .   \\ prints \"77\"
+    *   \\ 66 * 77 = 5082
+    .   \\ prints \"5082\"
+    $ ./forth.bb example.fs  # Creates example.ll
+    $ clang -O3 example.ll -o example
+    $ ./example
+    66
+    77
+    5082
+    $ time ./example
+    66
+    77
+    5082
+    
+    real	0m0.002s
+    user	0m0.000s
+    sys	0m0.001s
+

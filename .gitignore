@@ -3,6 +3,8 @@
 *.o
 argcount
 argcount-smaller
+example
+example.ll
 five
 forth
 hello
