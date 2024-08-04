@@ -15,7 +15,7 @@
   (str/join "\n"
             [(target m1-target)
              (extern-i8* "atoi")
-             #_(global-const-str "xxx" body)
+             #_(def-global-const-str "xxx" body)
              #_(main-calling-puts body)]))
 
 (argint-main "3")

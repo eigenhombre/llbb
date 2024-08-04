@@ -6,6 +6,27 @@
   (format "declare i32 @%s(i8* nocapture) nounwind"
           f-name))
 
+(defn symbolic? [x]
+  (or (symbol? x)
+      (keyword? x)))
+
+(defn name? [x]
+  (if (symbolic? x)
+    (name x)
+    x))
+
+(defn gep [target-type typ nam & intpairs]
+  (format "getelementptr %s, %s %s, %s"
+          target-type
+          typ
+          nam
+          (str/join ", " (map (fn [[a b]]
+                                (str (name? a) " " b))
+                              intpairs))))
+
+(defn star [x] (str (name x) "*")) ;; FIXME
+
+;; FIXME: remove in favor of `gep`:
 (defn as-ptr
   "
   Crude wrapper for getelementptr, just for strings (for now).
@@ -15,42 +36,106 @@
           body-len body-len (name var-name)))
 
 (defn els [& args]
-  (str/join "\n" args))
+  (str/join "\n\n" args))
 
-(defn def-global-fn [ret-type fn-name args & body]
-  (format "define %s @%s(%s) nounwind {
-%s
-}"
-          (name ret-type)
-          fn-name
-          (str/join ", " args)
-          (str/join "\n" (map (partial str "  ") body))))
+(def globals  (atom #{}))
+
+(defn global? [x] (@globals (name? x)))
+
+(defn add-to-globals! [x]
+  (swap! globals conj (name? x)))
+
+(defn sigil
+  "
+  Prefix `x` with @ or % depending on whether it's global or local.
+  "
+  [x]
+  (if (symbolic? x)
+    (format "%s%s"
+            (if (global? x) "@" "%")
+            (name? x))
+    x))
+
+(comment
+  (sigil :foo)
+  ;;=>
+  "%foo"
+  (add-to-globals! :foo)
+  ;;=>
+  #{"foo"}
+  (sigil :foo)
+  ;;=>
+  "@foo")
 
 (def m1-target "arm64-apple-macosx14.0.0")
+
 (defn target [t] (format "target triple = \"%s\"" t))
 
 (def aligns {:i32 4
              :ptr 8})
 
-(defn name? [x]
-  (if (or (symbol? x) (keyword? x))
-    (name x)
-    x))
+(defn fixedarray [n typ] (format "[%d x %s]"
+                                 n
+                                 (name? typ)))
 
-(defn global-const-str [var-name s]
-  (format "@%s = private unnamed_addr constant [%d x i8] c\"%s\\00\""
-          (name? var-name)
+(defn type= [nam typ] (format "%s = type %s"
+                              (sigil nam)
+                              typ))
+
+(comment
+  (type= :Stack (fixedarray 1000 :i32))
+  ;;=>
+  "%Stack = type [1000 x i32]")
+
+(defn def-fn [ret-type fn-name argpairs & body]
+  (add-to-globals! fn-name)
+  (let [args (for [[t n] argpairs]
+               (format "%s %s" (name? t) (sigil n)))
+        argstr (str/join ", " args)
+        body (str/join "\n" (map (partial str "  ") body))]
+    (format "define %s %s(%s) nounwind {\n%s\n}"
+            (name? ret-type)
+            (sigil fn-name)
+            argstr
+            body)))
+
+(defn def-global-int [nam typ val]
+  (add-to-globals! nam)
+  (format "%s = global %s %s"
+          (sigil nam)
+          (name? typ)
+          val))
+
+(defn def-global-const-str [var-name s]
+  (add-to-globals! var-name)
+  (format "%s = private unnamed_addr constant [%d x i8] c\"%s\\00\""
+          (sigil var-name)
           (inc (count s))
           s))
 
+(defn def-global-zeroed-var-as-ptr [nam typ]
+  (add-to-globals! nam)
+  (format "%s = global %%%s zeroinitializer"
+          (sigil nam)
+          (name? typ)))
+
 (defn farg [typ nam] (format "%s noundef %%%s" (name typ) (name? nam)))
-(defn assign [nam val] (format "%%%s = %s" (name? nam) val))
+(defn assign [nam val]
+  (format "%s = %s" (sigil nam) val))
 (defn alloca [typ] (format "alloca %s, align %d" (name typ) (aligns typ)))
 
 (defn reg-or-num [v]
   (if (keyword? v)
     (format "%%%s" (name v))
     v))
+
+(defn store-typed [from-type from-val to-type to-val]
+  (format "store %s %s, %s %s, align %d"
+          (name from-type)
+          from-val
+          to-type
+          to-val
+          (aligns from-type)))
 
 (defn store [typ val at]
   (format "store %s %s, ptr %s, align %d"
@@ -59,14 +144,49 @@
           (reg-or-num at)
           (aligns typ)))
 
+(defn load-typed [typ from]
+  (format "load %s, %s* %s, align %d"
+          (name? typ)
+          (name? typ)
+          (sigil from)
+          (aligns typ)))
+
 (defn load [typ from]
   (format "load %s, ptr %s, align %d"
           (name typ)
           (reg-or-num from)
           (aligns typ)))
 
-(defn ret [typ val]
-  (format "ret %s %s" (name typ) (reg-or-num val)))
+(defn add [typ a b]
+  (format "add %s %s, %s"
+          (name? typ)
+          (sigil a)
+          (sigil b)))
+
+(defn sub [typ a b]
+  (format "sub %s %s, %s"
+          (name? typ)
+          (sigil a)
+          (sigil b)))
+
+(defn mul [typ a b]
+  (format "mul %s %s, %s"
+          (name? typ)
+          (sigil a)
+          (sigil b)))
+
+(defn ret
+  ([_] "ret void") ;; unary is always void
+  ([typ val]
+   (format "ret %s %s" (name typ) (reg-or-num val))))
+
+(defn br-label [lbl]
+  (format "br label %s" (sigil lbl)))
+
+(defn maybe-nocapture [s]
+  (if (= s "...")
+    s
+    (format "%s nocapture" s)))
 
 (defn external-fn
   "
@@ -78,8 +198,22 @@
   (format "declare %s @%s(%s) nounwind"
           (name typ)
           (name fn-name)
-          (str/join ", " (map (comp #(str % " nocapture") name) arg-types))))
+          (str/join ", " (map (comp maybe-nocapture name) arg-types))))
 
+(defn if-not-equal [typ lhs rhs then-clause else-clause]
+  (let [cond-name (gensym "cond")]
+    (els
+     (format "%s = icmp eq %s %s, %s"
+             (sigil cond-name)
+             (name? typ)
+             (sigil lhs)
+             (sigil rhs))
+     (format "br i1 %s, label %%end, label %%body"
+             (sigil cond-name))
+     "body:"
+     then-clause
+     "end:"
+     else-clause)))
 (defn call
   "
   Invoke `fn-name` returning type `typ` with 0 or more type/arg pairs.
@@ -94,15 +228,17 @@
           (name typ)
           (name fn-name)
           (str/join ", " (for [[typ nam] arg-type-arg-pairs]
-                           (str (name typ) " %" (name? nam))))))
+                           (format "%s %s"
+                                   (name? typ)
+                                   (reg-or-num nam))))))
 
 (comment
   (spit
    "argcount.ll"
    (els
     (target m1-target)
-    (def-global-fn :i32 "main" [(farg :i32 0)
-                                (farg :ptr 1)]
+    (def-fn :i32 "main" [(farg :i32 0)
+                         (farg :ptr 1)]
       (assign 3 (alloca :i32))
       (assign 4 (alloca :i32))
       (assign 5 (alloca :ptr))
@@ -117,8 +253,8 @@
    "argcount-smaller.ll"
    (els
     (target m1-target)
-    (def-global-fn :i32 "main" [(farg :i32 :arg0)
-                                (farg :ptr :arg1_unused)]
+    (def-fn :i32 "main" [(farg :i32 :arg0)
+                         (farg :ptr :arg1_unused)]
       (assign :retptr (alloca :i32))
       (store :i32 :arg0 :retptr)
       (assign :retval (load :i32 :retptr))

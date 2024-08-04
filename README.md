@@ -444,7 +444,7 @@ to a new file `llir.bb`, our Hello, World example can then be
       (println
        (els (target m1-target)
             (external-fn :i32 :puts :i8*)
-            (global-const-str :message hello-str)
+            (def-global-const-str :message hello-str)
             (def-global-fn :i32 "main" []
               (assign :as_ptr (as-ptr :message (inc (count hello-str))))
               (call :i32 :puts [:i8* :as_ptr])
