@@ -237,7 +237,7 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.004s
+    real	0m0.005s
     user	0m0.001s
     sys	0m0.002s
     $ wc -c five
@@ -788,12 +788,10 @@ the tree and stores the results as intermediate values:
 
 ```
 (defn to-ssa [expr bindings]
-  (cond
-    (not (coll? expr)) expr
-
-    :else
+  (if (not (coll? expr))
+    expr
     (let [[op & args] expr
-          result (gensym "%x")
+          result (gensym "r")
           args (doall
                 (for [arg args]
                   (if-not (coll? arg)
@@ -808,16 +806,19 @@ the tree and stores the results as intermediate values:
     @bindings))
 ```
 
-    which, for our example, gives
+We use `gensym` here to get a unique variable name for each
+assignment, and `doall` to force the evaluation of the lazy `for`
+expansion of the argument terms.  The result:
 
     (->> "example.lisp"
-      slurp
-      edn/read-string
-      convert-to-ssa)
+         slurp
+         edn/read-string
+         convert-to-ssa)
     ;;=>
-    [(%x20892 * 66 3)
-    (%x20891 * 77 %x20892)
-    (%x20890 print %x20891)]
+    [(r20892 * 66 3)
+    (r20891 * 77 r20892)
+    (r20890 print r20891)]
+
 
 The next step will be to actually write out the corresponding LLVM IR
 and try it out!

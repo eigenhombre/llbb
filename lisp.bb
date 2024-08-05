@@ -1,12 +1,10 @@
 (require '[clojure.edn :as edn])
 
 (defn to-ssa [expr bindings]
-  (cond
-    (not (coll? expr)) expr
-
-    :else
+  (if (not (coll? expr))
+    expr
     (let [[op & args] expr
-          result (gensym "%x")
+          result (gensym "r")
           args (doall
                 (for [arg args]
                   (if-not (coll? arg)
@@ -26,7 +24,6 @@
        edn/read-string
        convert-to-ssa)
   ;;=>
-  [(%x20892 * 66 3)
-   (%x20891 * 77 %x20892)
-   (%x20890 print %x20891)]
-  )
+  [(r20892 * 66 3)
+   (r20891 * 77 r20892)
+   (r20890 print r20891)])
