@@ -237,7 +237,7 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.005s
+    real	0m0.004s
     user	0m0.001s
     sys	0m0.002s
     $ wc -c five
@@ -711,9 +711,8 @@ A few salient features jump out.  First, the `mul`, `push`, `pop`, and
 of these.  Second, errors are handled silently, and that's probably not
 what we want in our "production" calculator.
 
-Let's start fleshing out the Babashka generator and add some error handling
-along the way.  But first, how do we view the assembler output corresponding
-to our LLVM?
+Let's start fleshing out the Babashka generator.  But first, how do we
+view the assembler output corresponding to our LLVM?
 
     $ clang -O3 -S stack.ll -o stack.s
     $ head stack.s
@@ -816,9 +815,51 @@ expansion of the argument terms.  The result:
          convert-to-ssa)
     ;;=>
     [(r20892 * 66 3)
-    (r20891 * 77 r20892)
-    (r20890 print r20891)]
+     (r20891 * 77 r20892)
+     (r20890 print r20891)]
 
+The next step will be to actually write out the corresponding LLVM IR.
+This is satisfyingly small:
+```
+(def ops
+  {'* #(mul :i32 %1 %2)
+   'print
+   #(call "i32 (i8*, ...)"
+          :printf
+          [:i8* :as_ptr]
+          [:i32 (sigil %1)])})
 
-The next step will be to actually write out the corresponding LLVM IR
-and try it out!
+(let [[filename] *command-line-args*
+      outfile (str (fs/strip-ext filename) ".ll")
+      format-str "%d\n"
+      assignments (->> filename
+                       slurp
+                       edn/read-string
+                       convert-to-ssa)]
+  (spit outfile
+        (els
+         (target m1-target)
+         (external-fn :i32 :printf :i8*, :...)
+         (def-global-const-str :fmt_str format-str)
+         (def-fn :i32 :main []
+           (assign :as_ptr
+                   (gep (fixedarray 4 :i8)
+                        (star (fixedarray 4 :i8))
+                        (sigil :fmt_str)
+                        [:i64 0]
+                        [:i64 0]))
+           (apply els
+                  (for [[reg op & args] assignments
+                        :let [op-fn (ops op)]]
+                    (if-not op-fn
+                      (throw (ex-info "bad operator" {:op op}))
+                      (assign reg (apply op-fn args)))))
+           (ret :i32 0)))))
+```
+
+Putting the parts together (`lisp.bb`), we have:
+
+    $ ./lisp.bb example.lisp
+    $ clang -O3 example.ll -o example
+    $ ./example
+    15246
