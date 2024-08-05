@@ -237,9 +237,9 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.004s
-    user	0m0.001s
-    sys	0m0.002s
+    real	0m0.002s
+    user	0m0.000s
+    sys	0m0.001s
     $ wc -c five
        16840 five
 
@@ -863,3 +863,10 @@ Putting the parts together (`lisp.bb`), we have:
     $ clang -O3 example.ll -o example
     $ ./example
     15246
+
+To say this is a "working Lisp compiler" at this point would be quite
+grandiose... but we have the ingredients to build upon.  A good exercise
+at this point would be to add the other arithmetic operators.  Future
+posts on this topic may investigate function creation (both named functions
+and lambdas), something LLVM does support and definitely required to make
+our toy "languages" into real ones.
