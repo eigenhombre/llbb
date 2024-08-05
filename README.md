@@ -237,8 +237,8 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.003s
-    user	0m0.001s
+    real	0m0.002s
+    user	0m0.000s
     sys	0m0.001s
     $ wc -c five
        16840 five
@@ -755,6 +755,8 @@ Forth-like calculator:
     66
     77
     5082
+    $ du -hs example
+     36K	example
     $ time ./example > /dev/null
     
     real	0m0.002s
@@ -764,4 +766,5 @@ Forth-like calculator:
 This is still far from a "real" Forth implementation; I've only implemented one
 arithmetic operation; there is no way to define new values or functions ("words"
 in Forth-speak), no errors are signalled for stack overflows / underflows, etc.;
-but, it illustrates the principle I am interested in exploring.
+but, it illustrates the principle I am interested in exploring: the generation
+of LLVM IR to create small, fast executables.
