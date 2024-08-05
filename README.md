@@ -237,9 +237,9 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.002s
-    user	0m0.000s
-    sys	0m0.001s
+    real	0m0.004s
+    user	0m0.001s
+    sys	0m0.002s
     $ wc -c five
        16840 five
 
@@ -485,7 +485,8 @@ The program is, as expected, quite small:
     $ du -hs hello
      36K	hello
 
-In comparison, a "hello world" Clojure überjar on my machine is 3.3 MB.
+In comparison, a "hello world" Clojure überjar on my machine is 3.3 MB, nearly
+100 times larger.
 
 Note that the output of the program is "compiled into" the binary program:
 
