@@ -480,6 +480,13 @@ external function definition and the call itself.  The `getelementptr`
 (warning: [dragons](https://llvm.org/docs/GetElementPtr.html)) is used
 to get the address of the string constant.
 
+The program is, as expected, quite small:
+
+    $ du -hs hello
+     36K	hello
+
+In comparison, a "hello world" Clojure überjar on my machine is 3.3 MB.
+
 Note that the output of the program is "compiled into" the binary program:
 
     $ ./hello.bb The spice must flow. > spice.ll
@@ -487,8 +494,8 @@ Note that the output of the program is "compiled into" the binary program:
     $ ./spice
     The spice must flow.
 
-In a sense, we have built a tiny compiler for a language that consists solely
-of single strings to be printed.
+In a sense, we have built a tiny compiler frontend for a language that
+consists solely of single strings to be printed.
 
 # Building A Compiling Calculator
 
@@ -870,3 +877,13 @@ at this point would be to add the other arithmetic operators.  Future
 posts on this topic may investigate function creation (both named functions
 and lambdas), something LLVM does support and definitely required to make
 our toy "languages" into real ones.
+
+To summarize, the strategy we have taken is as follows:
+
+1. Use a high level language (in our case, Babashka/Clojure) to
+   parse input and translate into LLVM IR;
+2. Compile LLVM IR to small, fast binaries using `clang`.
+
+Whenever possible, I want to make small, fast programs, and I like playing
+with and creating small programming languages.  LLVM provides a fascinating
+set of tools and techniques for doing so.
