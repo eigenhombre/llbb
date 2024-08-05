@@ -10,7 +10,7 @@ programming language, that start and run quickly?
 
 I recently got interested in these answering questions using
 [LLVM](https://llvm.org/), a powerful compiler toolchain that uses a
-sort of abstract assembly language as it's ["intermediate
+sort of abstract assembly language as its ["intermediate
 representation"](https://en.wikipedia.org/wiki/Intermediate_representation).
 
 LLVM IR is easily generated using pretty much any programming
@@ -237,9 +237,9 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.002s
-    user	0m0.000s
-    sys	0m0.001s
+    real	0m0.004s
+    user	0m0.001s
+    sys	0m0.002s
     $ wc -c five
        16840 five
 
@@ -743,18 +743,20 @@ Forth-like calculator:
     $ cat example.fs
     \\ "Forth" calculator example
     
+    3   \\ push 3 on stack
     66  \\ push 66 on stack
     .   \\ print item on top of stack; prints "66"
+    *   \\ removes 66 and 3 and replaces top of stack with 198
     77  \\ push 77 on stack
     .   \\ prints "77"
-    *   \\ pop top two items on stack and put their product 66 * 77 = 5082 on stack
-    .   \\ prints "5082"
+    *   \\ removes 77 and 198 and replaces top of stack with 77 * 198 = 15246
+    .   \\ prints "15246"
     $ ./forth.bb example.fs  # Creates example.ll
     $ clang -O3 example.ll -o example
     $ ./example
     66
     77
-    5082
+    15246
     $ du -hs example
      36K	example
     $ time ./example > /dev/null
@@ -763,8 +765,59 @@ Forth-like calculator:
     user	0m0.000s
     sys	0m0.001s
 
-This is still far from a "real" Forth implementation; I've only implemented one
-arithmetic operation; there is no way to define new values or functions ("words"
-in Forth-speak), no errors are signalled for stack overflows / underflows, etc.;
-but, it illustrates the principle I am interested in exploring: the generation
+`forth.bb` is a fairly straightforward conversion of the LLVM IR shown
+above. While is still far from a "real" Forth implementation (I've
+only implemented one arithmetic operation; there is no way to define
+new values or functions, and there is no real error handling), it
+illustrates the principle I am interested in exploring: the generation
 of LLVM IR to create small, fast executables.
+
+# Lisp
+
+A variant worth exploring is to switch from Forth syntax to Lisp:
+
+    $ cat example.lisp
+    
+    ;; alternative calculator syntax:
+    (print (* 77 (* 66 3)))
+
+Here Babashka/Clojure helps us because this is valid [EDN](https://github.com/edn-format/edn) data, readable with `clojure.edn/read-string`.  But we need to convert the resulting
+nested list into "SSA" (single static assignment) expressions LLVM understands.
+This is relatively straightforward with a recursive function which expands leaves of
+the tree and stores the results as intermediate values:
+
+```
+(defn to-ssa [expr bindings]
+  (cond
+    (not (coll? expr)) expr
+
+    :else
+    (let [[op & args] expr
+          result (gensym "%x")
+          args (doall
+                (for [arg args]
+                  (if-not (coll? arg)
+                    arg
+                    (to-ssa arg bindings))))]
+      (swap! bindings conj (concat [result op] args))
+      result)))
+
+(defn convert-to-ssa [expr]
+  (let [bindings (atom [])]
+    (to-ssa expr bindings)
+    @bindings))
+```
+
+    which, for our example, gives
+
+    (->> "example.lisp"
+      slurp
+      edn/read-string
+      convert-to-ssa)
+    ;;=>
+    [(%x20892 * 66 3)
+    (%x20891 * 77 %x20892)
+    (%x20890 print %x20891)]
+
+The next step will be to actually write out the corresponding LLVM IR
+and try it out!
