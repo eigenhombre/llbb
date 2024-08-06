@@ -1,17 +1,13 @@
 # Building Compact Programs In Your Own Programming Language
 
-**NOTE** What follows are notes in progress, shown while they are
-being written ... expect radical changes for the time being.
+Some questions I have been pondering lately:
+- How does one create small, self-contained programs in a new programming language, that start and run quickly?
+- Can one write a compiler with the help of [Babashka](https://babashka.org/)?
 
-Can you write a compiler with the help of [Babashka](https://babashka.org/)?
-
-How does one create small, self-contained programs in a new
-programming language, that start and run quickly?
-
-I recently got interested in these answering questions using
+I recently got interested in answering these questions using
 [LLVM](https://llvm.org/), a powerful compiler toolchain that uses a
 sort of abstract assembly language as its ["intermediate
-representation"](https://en.wikipedia.org/wiki/Intermediate_representation).
+representation"](https://en.wikipedia.org/wiki/Intermediate_representation) (IR).
 
 LLVM IR is easily generated using pretty much any programming
 language. Babashka provides the power of Clojure, fast start up speed,
@@ -20,10 +16,7 @@ languages.
 
 # First Steps
 
-Let's start with the question, what's the minimal semantic unit of compilation
-that the C compiler will accept, and how do these look in LLVM IR?
-
-Let's start with a tiny bit of numerical state, on its own:
+Let's start by looking at the smallest possible C programs.  For example,
 
     $ cat min.c
     int x = 3;
@@ -34,15 +27,9 @@ Let's start with a tiny bit of numerical state, on its own:
 This just provides a single value which could be used by some other function,
 brought together at some future time using the linker.
 
-How about this one?  A void function of no arguments, that does nothing:
-
-    $ cat minfun.c
-    void x(void) {}
-    $ cc -c minfun.c
-    $ wc -c minfun.o
-         504 minfun.o
-
-One can view the LLVM output for a C file:
+Many people know how to get the C compiler to generate assembler
+instead of object code.  But using `clang`, one can also create the
+LLVM IR for a C file:
 
     $ clang -S -emit-llvm min.c -o min.ll
     $ cat min.ll
@@ -63,76 +50,36 @@ One can view the LLVM output for a C file:
     !4 = !{i32 7, !"frame-pointer", i32 1}
     !5 = !{!"Apple clang version 15.0.0 (clang-1500.3.9.4)"}
 
-There's a lot of stuff there, but most of it looks like metadata
+There's a lot of stuff there, but most of it is metadata
 we can ignore for the time being.  (Note that most of the time I will
 write `clang` to indicate we are doing something LLVM-specific,
 and `cc` to indicate more general behavior, though on my system the two
 are the same).
 
-What would a minimal function look like?
+Stripping out the metadata, one has, simply:
 
-    $ clang -S -emit-llvm minfun.c -o minfun.ll
-    $ cat minfun.ll
-    ; ModuleID = 'minfun.c'
-    source_filename = "minfun.c"
-    target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128"
     target triple = "arm64-apple-macosx14.0.0"
     
-    ; Function Attrs: noinline nounwind optnone ssp uwtable(sync)
-    define void @x() #0 {
-      ret void
-    }
-    
-    attributes #0 = { noinline nounwind optnone ssp uwtable(sync) "frame-pointer"="non-leaf" "min-legal-vector-width"="0" "no-trapping-math"="true" "probe-stack"="__chkstk_darwin" "stack-protector-buffer-size"="8" "target-cpu"="apple-m1" "target-features"="+aes,+crc,+crypto,+dotprod,+fp-armv8,+fp16fml,+fullfp16,+lse,+neon,+ras,+rcpc,+rdm,+sha2,+sha3,+sm4,+v8.1a,+v8.2a,+v8.3a,+v8.4a,+v8.5a,+v8a,+zcm,+zcz" }
-    
-    !llvm.module.flags = !{!0, !1, !2, !3, !4}
-    !llvm.ident = !{!5}
-    
-    !0 = !{i32 2, !"SDK Version", [2 x i32] [i32 14, i32 4]}
-    !1 = !{i32 1, !"wchar_size", i32 4}
-    !2 = !{i32 8, !"PIC Level", i32 2}
-    !3 = !{i32 7, !"uwtable", i32 1}
-    !4 = !{i32 7, !"frame-pointer", i32 1}
-    !5 = !{!"Apple clang version 15.0.0 (clang-1500.3.9.4)"}
-
-If I rip out a lot of extra junk, I get what looks like the significant
-bits:
-
-    # min.c:
-    target triple = "arm64-apple-macosx14.0.0"
     @x = global i32 3, align 4
 
-    # minfun.c:
-    target triple = "arm64-apple-macosx14.0.0"
-    define void @x() {
-      ret void
-    }
+How about the "smallest" possible function? A `void` function of no
+arguments, that does nothing:
 
-Can you get even more minimal?
+    $ cat minfun.c
+    void x(void) {}
+    $ cc -c minfun.c
+    $ wc -c minfun.o
+         504 minfun.o
 
-    $ cat empty.c  # This file is literally empty
-    $ cc -c empty.c
-    $ wc -c empty.o
-         336 empty.o
-    $ clang -S -emit-llvm empty.c -o empty.ll
-    $ cat empty.ll
-    ; ModuleID = 'empty.c'
-    source_filename = "empty.c"
-    target datalayout = "e-m:o-i64:64-i128:128-n32:64-S128"
-    target triple = "arm64-apple-macosx14.0.0"
-    
-    !llvm.module.flags = !{!0, !1, !2, !3, !4}
-    !llvm.ident = !{!5}
-    
-    !0 = !{i32 2, !"SDK Version", [2 x i32] [i32 14, i32 4]}
-    !1 = !{i32 1, !"wchar_size", i32 4}
-    !2 = !{i32 8, !"PIC Level", i32 2}
-    !3 = !{i32 7, !"uwtable", i32 1}
-    !4 = !{i32 7, !"frame-pointer", i32 1}
-    !5 = !{!"Apple clang version 15.0.0 (clang-1500.3.9.4)"}
+Its LLVM IR is also quite simple (here and below I elide the metadata):
 
-You can see the same kinds of metadata seen in the other examples, but
-without the juicy, significant bits.
+```
+target triple = "arm64-apple-macosx14.0.0"
+
+define void @x() #0 {
+  ret void
+}
+```
 
 By progressively adding complexity, one can begin to understand the IR.
 For example, let's write our first main function (that does nothing):
@@ -145,7 +92,9 @@ For example, let's write our first main function (that does nothing):
 
 Interestingly, the exit code is 0, even though we didn't specify it.
 (This behavior is spelled out in the C standard.)  Running our usual
-trick of viewing the IR gives (in addition to the usual junk):
+trick of viewing the IR gives:
+
+    target triple = "arm64-apple-macosx14.0.0"
 
     define i32 @main() #0 {
       ret i32 0
@@ -154,20 +103,14 @@ trick of viewing the IR gives (in addition to the usual junk):
 Can this IR, alone, run?
 
     $ cat zero.ll
+    target triple = "arm64-apple-macosx14.0.0"
+    
     define i32 @main() #0 {
       ret i32 0
     }
     $ clang -O3 zero.ll -o zero-min
-    warning: overriding the module target triple with arm64-apple-macosx14.0.0 [-Woverride-module]
-    1 warning generated.
     $ ./zero-min; echo $?
     0
-
-If we don't want the warning, we need to add, e.g.,
-
-    target triple = "arm64-apple-macosx14.0.0"
-
-to the top of the file.
 
 If instead I want to return, say, 3, we can:
 
@@ -214,8 +157,8 @@ Let's try generating some IR with Babashka.
     (spit "five.ll" (els (target-triple target)
                          (simple-main 5)))
 
-Here I have added tiny helper functions to make both a simple `main`
-function template and a target triple template.  Trying it,
+Here I have added a few tiny helper functions to make both a simple
+`main` function template and a target triple template.  Trying it,
 
     $ bb five.bb
     $ cat five.ll
@@ -237,21 +180,21 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.004s
-    user	0m0.001s
-    sys	0m0.002s
+    real	0m0.002s
+    user	0m0.000s
+    sys	0m0.001s
     $ wc -c five
        16840 five
 
-One of my favorite things about Go, Rust and C is that they produce
-relatively small, stand-alone binaries, compared with the massive
-uberjar files involved in shipping Java/Clojure apps, Python
-Eggs / virtualenvs / etc.
+Why is this interesting?  One of my favorite things about Go, Rust and
+C is that they produce relatively small, stand-alone binaries,
+compared with the massive uberjar files involved in shipping
+Java/Clojure apps, Python Eggs / virtualenvs / etc.
 
-We've just started chipping out a path to building tiny executables
-using Babashka, a tool typically thought of as primarily useful for
-"scripting," leveraging LLVM's assembly-language-like IR and tooling
-to get us close to the metal.
+Though we haven't done much useful yet, we have started chipping out a
+path to building tiny executables using Babashka, a tool typically
+thought of as primarily useful for "scripting," leveraging LLVM's
+assembly-language-like IR and tooling to get us close to the metal.
 
 (Note that I could just as easily have used Clojure instead of
 Babashka to produce the IR.  But small Babashka scripts run much
