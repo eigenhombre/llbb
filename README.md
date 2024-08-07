@@ -180,7 +180,7 @@ generated a small, fast binary executable:
 
     $ time ./five
     
-    real	0m0.002s
+    real	0m0.001s
     user	0m0.000s
     sys	0m0.001s
     $ wc -c five
@@ -680,10 +680,10 @@ view the assembler output corresponding to our LLVM?
 
 The resulting assembler is not even three times longer than the LLVM IR.
 
-    $ wc -l stack.s stack.ll
-         262 stack.s
-         103 stack.ll
-         365 total
+    $ wc -c stack.s stack.ll
+        7167 stack.s
+        2795 stack.ll
+        9962 total
 
 # Putting The Pieces Together
 
@@ -711,9 +711,9 @@ Forth-like calculator:
      36K	example
     $ time ./example > /dev/null
     
-    real	0m0.002s
-    user	0m0.000s
-    sys	0m0.001s
+    real	0m0.003s
+    user	0m0.001s
+    sys	0m0.002s
 
 `forth.bb` is a fairly straightforward conversion of the LLVM IR shown
 above. While is still far from a "real" Forth implementation (I've
