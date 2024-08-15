@@ -156,11 +156,14 @@
 
 (comment
 
-  (compile-to (module) "foo")
+  ;; Non-program, smallest compilable unit:
   (spit "smallest-obj.ll" (module))
   (sh "clang -O3 -c smallest-obj.ll -o smallest.o")
   (sh "ls -al smallest.o")
+  ;;=>
+  "-rw-r--r--  1 jacobsen  staff  336 Aug 14 21:11 smallest.o\n"
 
+  ;; Smallest program: return 0:
   (compile-to "smallest-prog"
               (module
                (def-fn :i32 :main [] (ret :i32 0))))
@@ -169,12 +172,13 @@
   ;;=>
   "-rwxr-xr-x  1 jacobsen  staff  16848 Aug 13 21:45 smallest-prog\n"
 
+  ;; Return a different exit code:
   (compile-to "one"
               (module
                (def-fn :i32 :main [] (ret :i32 1))))
   (sh "./one; echo -n $?") ;;=> "1"
 
-  ;; Argument counting
+  ;; Argument counting: return number of arguments as an exit code:
   (compile-to "argcount"
               (module
                (def-fn :i32 :main [[:i32 :arg0]
