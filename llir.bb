@@ -8,6 +8,7 @@
   (str/join "\n\n" args))
 
 (def globals (atom #{}))
+(def our-types (atom #{}))
 
 (defn symbolic? [x]
   (or (symbol? x)
@@ -19,9 +20,13 @@
     x))
 
 (defn global? [x] (@globals (name? x)))
+(defn our-type? [x] (@our-types (name? x)))
 
 (defn add-to-globals! [x]
   (swap! globals conj (name? x)))
+
+(defn add-to-our-types! [x]
+  (swap! our-types conj (name? x)))
 
 (defn sigil
   "
@@ -58,6 +63,26 @@
 
 (defn assign [nam val]
   (format "%s = %s" (sigil nam) val))
+
+(defn def-type [nam typ]
+  (add-to-our-types! typ)
+  (format "%s = type %s"
+          (sigil nam)
+          typ))
+
+(defn maybe-our-type [typ]
+  (if (our-type? typ)
+    (sigil typ)
+    (name? typ)))
+
+(defn assign-global [nam typ val]
+  (add-to-globals! nam)
+  (format "%s = global %s %s"
+          (sigil nam)
+          ;; can be primitive or our type:
+          (maybe-our-type typ)
+          ;; can be zeroinitializer:
+          (name? val)))
 
 (def aligns {:i32 4
              :ptr 8})
@@ -138,6 +163,37 @@
           (str/join ", " (map (fn [[a b]]
                                 (str (name? a) " " b))
                               intpairs))))
+
+
+(defn br-label [lbl]
+  (format "br label %s" (sigil lbl)))
+
+(defn if-not-equal [typ lhs rhs then-clause else-clause]
+  (let [cond-name (gensym "cond")]
+    (els
+     (format "%s = icmp eq %s %s, %s"
+             (sigil cond-name)
+             (name? typ)
+             (sigil lhs)
+             (sigil rhs))
+     (format "br i1 %s, label %%end, label %%body"
+             (sigil cond-name))
+     "body:"
+     then-clause
+     "end:"
+     else-clause)))
+
+(defn arithm [op typ a b]
+  (format "%s %s %s, %s"
+          (name? op)
+          (name? typ)
+          (sigil a)
+          (sigil b)))
+
+(defn add [typ a b] (arithm :add typ a b))
+(defn sub [typ a b] (arithm :sub typ a b))
+(defn mul [typ a b] (arithm :mul typ a b))
+(defn div [typ a b] (arithm :sdiv typ a b))
 
 (defn module [& args]
   (apply els (list* (target m1-target) args)))
