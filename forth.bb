@@ -48,7 +48,7 @@
       ;; Operations
       op (node. :op op)
 
-      :else (node. :invalid :invalid))))
+      :else (node. :invalid t))))
 
 (comment
   (->> "example.fs"
@@ -64,17 +64,15 @@
 (defn def-arithmetic-op [nam op-fn]
   (def-fn :void nam []
     (assign :sp (call :i32 :get_stack_cnt))
-    (if-not-equal
-        :i32 :sp 0
-        (els
-         (assign :value2
-                 (call :i32 :pop))
-         (assign :value1
-                 (call :i32 :pop))
-         (assign :result (op-fn :i32 :value1 :value2))
-         (call :void :push [:i32 :result])
-         (br-label :end))
-        (els))
+    (if-lt :i32 :sp 2
+           (els)  ;; NOP - not enough on stack
+           (els
+            (assign :value2
+                    (call :i32 :pop))
+            (assign :value1
+                    (call :i32 :pop))
+            (assign :result (op-fn :i32 :value1 :value2))
+            (call :void :push [:i32 :result])))
     (ret :void)))
 
 (defn main [[path]]
@@ -136,51 +134,57 @@
 
            (def-fn :i32 :pop []
              (assign :sp (call :i32 :get_stack_cnt))
-             (if-not-equal
-                 :i32 :sp 0
-                 (els
-                  (assign :value
-                          (call :i32 :item_at [:i32 :sp]))
-                  (call :void :add_to_stack_cnt [:i32 -1])
-                  (ret :i32 :value))
-                 (ret :i32 0)))
+             (if-lt :i32 :sp 1
+                    (ret :i32 0)
+                    (els
+                     (assign :value
+                             (call :i32 :item_at [:i32 :sp]))
+                     (call :void :add_to_stack_cnt [:i32 -1])
+                     (ret :i32 :value))))
 
            (def-arithmetic-op :mul mul)
            (def-arithmetic-op :add add)
            (def-arithmetic-op :sub sub)
            (def-arithmetic-op :div div)
 
+           (def-fn :void :drop []
+             (call :i32 :pop)
+             (ret :void))
+
            (def-fn :void :dot []
              (assign :sp (call :i32 :get_stack_cnt))
-             (if-not-equal
-                 :i32 :sp 0
-                 (els
-                  (assign :value
-                          (call :i32 :item_at [:i32 :sp]))
-                  ;; GEP
-                  (assign :as_ptr
-                          (gep (fixedarray 4 :i8)
-                               (star (fixedarray 4 :i8))
-                               (sigil :fmt_str)
-                               [:i64 0]
-                               [:i64 0]))
-                  ;; FIXME: cheating:
-                  (call "i32 (i8*, ...)"
-                        :printf
-                        [:i8* :as_ptr]
-                        [:i32 :value])
-                  (br-label :end))
-                 ;; NOP:
-                 (els))
+             (if-lt :i32 :sp 2
+                    (els)  ;; NOP
+                    (els
+                     (assign :value
+                             (call :i32 :item_at [:i32 :sp]))
+                     ;; GEP
+                     (assign :as_ptr
+                             (gep (fixedarray 4 :i8)
+                                  (star (fixedarray 4 :i8))
+                                  (sigil :fmt_str)
+                                  [:i64 0]
+                                  [:i64 0]))
+                     ;; FIXME: cheating:
+                     (call "i32 (i8*, ...)"
+                           :printf
+                           [:i8* :as_ptr]
+                           [:i32 :value])))
              (ret :void))
 
            (def-fn :i32 :main []
              (apply
               els
-              (for [{:keys [typ val]} nodes]
-                (if (= typ :num)
+              (for [{:keys [typ val] :as n} nodes]
+                (cond
+                  (= typ :num)
                   (call :void :push [:i32 val])
-                  (call :void val))))
+
+                  (= typ :op)
+                  (call :void val)
+
+                  :t (throw (ex-info "Bad token"
+                                     {:node n})))))
              (ret :i32 0)))]
       (compile-to outfile ir))))
 

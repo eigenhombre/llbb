@@ -169,20 +169,28 @@
 (defn br-label [lbl]
   (format "br label %s" (sigil lbl)))
 
-(defn if-not-equal [typ lhs rhs then-clause else-clause]
+(defn icmp [comparison typ lhs rhs then-clause else-clause]
   (let [cond-name (gensym "cond")]
     (els
-     (format "%s = icmp eq %s %s, %s"
+     (format "%s = icmp %s %s %s, %s"
              (sigil cond-name)
+             (name? comparison)
              (name? typ)
              (sigil lhs)
              (sigil rhs))
-     (format "br i1 %s, label %%end, label %%body"
+     (format "br i1 %s, label %%body, label %%end"
              (sigil cond-name))
      "body:"
      then-clause
+     (br-label :end)
      "end:"
      else-clause)))
+
+(defn if-lt [typ lhs rhs then-clause else-clause]
+  (icmp :slt typ lhs rhs then-clause else-clause))
+
+(defn if-eq [typ lhs rhs then-clause else-clause]
+  (icmp :eq typ lhs rhs then-clause else-clause))
 
 (defn arithm [op typ a b]
   (format "%s %s %s, %s"
@@ -229,10 +237,9 @@
   (let [ll-file
         (str (fs/create-temp-file {:prefix "llbb-", :suffix ".ll"}))]
     (spit ll-file body)
-    (assert (empty?
-             (sh (format "clang -O3 %s -o %s"
-                         ll-file
-                         progname))))))
+    (sh (format "clang -O3 %s -o %s"
+                ll-file
+                progname))))
 
 (comment
   ;; Non-program, smallest compilable unit:
