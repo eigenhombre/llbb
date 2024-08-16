@@ -1,4 +1,5 @@
 (require '[babashka.process :as sh])
+(require '[babashka.fs :as fs])
 
 (def m1-target "arm64-apple-macosx14.0.0")
 
@@ -195,23 +196,45 @@
 (defn mul [typ a b] (arithm :mul typ a b))
 (defn div [typ a b] (arithm :sdiv typ a b))
 
+(comment
+  (div :i32 :a :b)
+  ;;=>
+  "sdiv i32 %a, %b"
+
+  (add :i8 :x 1)
+  ;;=>
+  "add i8 %x, 1")
+
 (defn module [& args]
   (apply els (list* (target m1-target) args)))
 
-(defn sh [s]
+(defn sh
+  "
+  Use `bash` to run command(s) `s`, capturing both stdout/stderr
+  as a contatenated string.  Throw an exception if the exit code
+  is nonzero.
+  "
+  [s]
   (let [{:keys [out err]}
         (sh/shell {:out :string, :err :string}
                   (format "bash -c '%s'" s))]
     (str/join "\n" (remove empty? [out err]))))
 
-(defn compile-to [progname body]
+(defn compile-to
+  "
+  Save IR `body` to a temporary file and compile it, writing the
+  resulting binary to `progname` in the current working directory.
+  "
+  [progname body]
   (let [ll-file
         (str (fs/create-temp-file {:prefix "llbb-", :suffix ".ll"}))]
     (spit ll-file body)
-    (assert (empty? (sh (format "clang -O3 %s -o %s" ll-file progname))))))
+    (assert (empty?
+             (sh (format "clang -O3 %s -o %s"
+                         ll-file
+                         progname))))))
 
 (comment
-
   ;; Non-program, smallest compilable unit:
   (spit "smallest-obj.ll" (module))
   (sh "clang -O3 -c smallest-obj.ll -o smallest.o")
@@ -219,7 +242,7 @@
   ;;=>
   "-rw-r--r--  1 jacobsen  staff  336 Aug 14 21:11 smallest.o\n"
 
-  ;; Smallest program: return 0:
+  ;; Smallest program: just return 0:
   (compile-to "smallest-prog"
               (module
                (def-fn :i32 :main [] (ret :i32 0))))
@@ -231,8 +254,20 @@
   ;; Return a different exit code:
   (compile-to "one"
               (module
-               (def-fn :i32 :main [] (ret :i32 1))))
-  (sh "./one; echo -n $?") ;;=> "1"
+               (def-fn :i32 :main []
+                 (ret :i32 3)))
+              ;;=>
+              "target triple = \"arm64-apple-macosx14.0.0\"\n\ndefine i32 @main() nounwind {\n  ret i32 3\n}")
+  (sh "./one; echo -n $?") ;;=> "3"
+
+  ;; Example program from blog post:
+  (compile-to "new3"
+              (println(module
+                       (assign-global :i :i32 3)
+                       (def-fn :i32 :main []
+                         (assign :retval (load :i32 :i))
+                         (ret :i32 :retval)))))
+  (sh "./new3; echo $?")
 
   ;; Argument counting: return number of arguments as an exit code:
   (compile-to "argcount"
@@ -265,4 +300,7 @@
 
   (sh "./hello") ;;=> "Hello, World.\n"
   (sh "wc -c hello") ;;=> "   33432 hello\n"
+  (sh "ls -l hello")
+  ;;=>
+  "-rwxr-xr-x  1 jacobsen  staff  33432 Aug 14 21:09 hello\n"
   )
