@@ -219,7 +219,7 @@
 (defn sh
   "
   Use `bash` to run command(s) `s`, capturing both stdout/stderr
-  as a contatenated string.  Throw an exception if the exit code
+  as a concatenated string.  Throw an exception if the exit code
   is nonzero.
   "
   [s]
